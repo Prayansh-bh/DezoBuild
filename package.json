@@ -18,7 +18,8 @@
     "build:backend": "npm run build --workspace=backend",
     "preview": "npm run preview --workspace=frontend",
     "lint": "eslint frontend/src backend/src",
-    "format": "prettier --write frontend owner backend README.md package.json"
+    "format": "prettier --write frontend owner backend README.md package.json",
+    "test": "npm run test --workspace=backend"
   },
   "overrides": {
     "rolldown": "1.2.1"
