@@ -4,10 +4,9 @@
 
 ```text
 Dezobuild/
-├── frontend/      # Single construction operations portal (TanStack Start + React 19 + Tailwind v4)
+├── frontend/      # Customer / Tenant Operations App (TanStack Start + React 19 + Tailwind v4)
+├── owner/         # Platform Owner Governance Control Hub (Vite + React 19 + Tailwind v4)
 ├── backend/       # Backend service layer & domain contracts (TypeScript + Prisma Schema)
-├── docs/          # Architecture blueprints, 29-subsystem OS matrix, API specs, ERD, and audits
-├── tests/         # Unit, integration, and route verification test suites
 ├── package.json   # Root workspace orchestration
 └── README.md
 ```

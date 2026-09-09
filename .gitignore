@@ -12,12 +12,12 @@ dist
 dist-ssr
 .output
 .vinxi
-.tanstack/**
+.tanstack
 .nitro
 *.local
 
 # Wrangler / Cloudflare
-.wrangler/
+.wrangler
 .dev.vars
 
 # Editor directories and files

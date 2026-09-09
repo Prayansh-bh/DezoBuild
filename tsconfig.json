@@ -5,8 +5,6 @@
     "owner/src/**/*.ts",
     "owner/src/**/*.tsx",
     "backend/src/**/*.ts",
-    "tests/**/*.ts",
-    "vite.config.ts",
     "eslint.config.js"
   ],
   "compilerOptions": {
