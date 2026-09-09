@@ -1,0 +1,241 @@
+// DEZOBUILD Construction Operating System - Production Prisma Schema
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model Project {
+  id                  String         @id @default(uuid())
+  code                String         @unique
+  name                String
+  clientName          String
+  location            String
+  city                String
+  state               String
+  status              ProjectStatus  @default(ACTIVE)
+  startDate           DateTime
+  targetEndDate       DateTime
+  revisedEndDate      DateTime?
+  contractValue       Decimal        @db.Decimal(15, 2)
+  estimatedBudget     Decimal        @db.Decimal(15, 2)
+  actualCost          Decimal        @default(0) @db.Decimal(15, 2)
+  progressPercent     Float          @default(0)
+  plannedProgress     Float          @default(0)
+  builtUpAreaSqFt     Float
+  projectType         String
+  description         String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  wbsActivities       WbsActivity[]
+  dprRecords          DprRecord[]
+  materialIndents     MaterialIndent[]
+  purchaseOrders      PurchaseOrder[]
+  grnRecords          GrnRecord[]
+  materialIssues      MaterialIssue[]
+  expenses            Expense[]
+  payments            Payment[]
+  attendanceRecords   Attendance[]
+  documents           Document[]
+  alerts              Alert[]
+
+  @@map("projects")
+}
+
+model WbsActivity {
+  id              String    @id @default(uuid())
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  wbsCode         String
+  name            String
+  category        String
+  startDate       DateTime
+  endDate         DateTime
+  plannedQuantity Float
+  actualQuantity  Float     @default(0)
+  unit            String
+  weightagePercent Float
+  progressPercent Float     @default(0)
+  status          String
+  assignedTo      String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@map("wbs_activities")
+}
+
+model DprRecord {
+  id              String    @id @default(uuid())
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dprNumber       String    @unique
+  date            DateTime
+  submittedBy     String
+  weather         String
+  totalLabour     Int
+  status          String
+  createdAt       DateTime  @default(now())
+
+  @@map("dpr_records")
+}
+
+model MaterialItem {
+  id              String    @id @default(uuid())
+  itemCode        String    @unique
+  name            String
+  category        String
+  specification   String
+  unit            String
+  currentStock    Float     @default(0)
+  reorderLevel    Float
+  unitRate        Decimal   @db.Decimal(10, 2)
+  status          String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@map("materials")
+}
+
+model MaterialIndent {
+  id              String    @id @default(uuid())
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id])
+  indentNumber    String    @unique
+  requestedBy     String
+  requiredByDate  DateTime
+  status          String
+  priority        Priority  @default(MEDIUM)
+  createdAt       DateTime  @default(now())
+
+  @@map("material_indents")
+}
+
+model PurchaseOrder {
+  id              String    @id @default(uuid())
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id])
+  poNumber        String    @unique
+  vendorName      String
+  totalAmount     Decimal   @db.Decimal(15, 2)
+  issueDate       DateTime
+  status          String
+  createdAt       DateTime  @default(now())
+
+  @@map("purchase_orders")
+}
+
+model GrnRecord {
+  id              String    @id @default(uuid())
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id])
+  grnNumber       String    @unique
+  vendorName      String
+  invoiceNumber   String
+  receivedDate    DateTime
+  status          String
+  createdAt       DateTime  @default(now())
+
+  @@map("grn_records")
+}
+
+model MaterialIssue {
+  id              String    @id @default(uuid())
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id])
+  issueNumber     String    @unique
+  contractorName  String
+  issuedDate      DateTime
+  createdAt       DateTime  @default(now())
+
+  @@map("material_issues")
+}
+
+model Expense {
+  id              String    @id @default(uuid())
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id])
+  expenseNumber   String    @unique
+  category        String
+  amount          Decimal   @db.Decimal(15, 2)
+  paidTo          String
+  date            DateTime
+  status          String
+  createdAt       DateTime  @default(now())
+
+  @@map("expenses")
+}
+
+model Payment {
+  id              String    @id @default(uuid())
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id])
+  voucherNumber   String    @unique
+  beneficiaryName String
+  amount          Decimal   @db.Decimal(15, 2)
+  paymentMode     String
+  date            DateTime
+  status          String
+  createdAt       DateTime  @default(now())
+
+  @@map("payments")
+}
+
+model Attendance {
+  id              String    @id @default(uuid())
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id])
+  date            DateTime
+  labourCount     Int
+  staffCount      Int
+  recordedBy      String
+  createdAt       DateTime  @default(now())
+
+  @@map("attendance")
+}
+
+model Document {
+  id              String    @id @default(uuid())
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id])
+  name            String
+  category        String
+  fileSize        String
+  version         String
+  uploadedBy      String
+  status          String
+  createdAt       DateTime  @default(now())
+
+  @@map("documents")
+}
+
+model Alert {
+  id              String    @id @default(uuid())
+  projectId       String?
+  project         Project?  @relation(fields: [projectId], references: [id])
+  type            String
+  severity        Priority
+  title           String
+  description     String
+  status          String
+  createdAt       DateTime  @default(now())
+
+  @@map("alerts")
+}

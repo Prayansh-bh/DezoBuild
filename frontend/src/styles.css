@@ -1,0 +1,272 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap");
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 4px);
+  --font-sans:
+    "Inter", "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "IBM Plex Mono", monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-danger: var(--sidebar-danger);
+  --color-sidebar-danger-foreground: var(--sidebar-danger-foreground);
+  --color-brand-mark: var(--brand-mark);
+  --color-brand-mark-foreground: var(--brand-mark-foreground);
+  --color-brand-accent: var(--brand-accent);
+  --color-overlay: var(--overlay);
+  --shadow-panel: var(--shadow-panel);
+  --shadow-float: var(--shadow-float);
+}
+
+:root {
+  --font-sans:
+    "Inter", "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "IBM Plex Mono", monospace;
+  --radius: 0.625rem;
+  --background: oklch(0.985 0.002 240);
+  --foreground: oklch(0.18 0.02 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.02 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.02 260);
+  --primary: oklch(0.68 0.19 48);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.96 0.005 240);
+  --secondary-foreground: oklch(0.24 0.02 260);
+  --muted: oklch(0.96 0.004 240);
+  --muted-foreground: oklch(0.48 0.015 260);
+  --accent: oklch(0.96 0.03 55);
+  --accent-foreground: oklch(0.35 0.12 50);
+  --destructive: oklch(0.55 0.22 27);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.92 0.004 240);
+  --input: oklch(0.89 0.006 240);
+  --ring: oklch(0.68 0.19 48);
+  --success: oklch(0.58 0.16 150);
+  --success-soft: oklch(0.96 0.04 150);
+  --warning: oklch(0.68 0.17 75);
+  --warning-soft: oklch(0.96 0.06 80);
+  --danger: oklch(0.58 0.22 28);
+  --danger-soft: oklch(0.96 0.04 25);
+  --info: oklch(0.58 0.16 240);
+  --sidebar: oklch(0.985 0.003 240);
+  --sidebar-foreground: oklch(0.18 0.02 260);
+  --sidebar-muted: oklch(0.48 0.015 260);
+  --sidebar-primary: oklch(0.68 0.19 48);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.935 0.008 240);
+  --sidebar-border: oklch(0.9 0.006 240);
+  --sidebar-ring: oklch(0.68 0.19 48);
+  --sidebar-danger: oklch(0.58 0.22 28);
+  --sidebar-danger-foreground: oklch(1 0 0);
+  --brand-mark: oklch(0.68 0.19 48);
+  --brand-mark-foreground: oklch(1 0 0);
+  --brand-accent: oklch(0.72 0.18 52);
+  --overlay: oklch(0.12 0.02 260 / 50%);
+  --shadow-panel: 0 1px 3px 0 rgb(0 0 0 / 0.03), 0 1px 2px -1px rgb(0 0 0 / 0.02);
+  --shadow-float: 0 12px 32px -4px rgb(0 0 0 / 0.07), 0 4px 12px -2px rgb(0 0 0 / 0.03);
+}
+
+.dark {
+  --background: oklch(0.12 0.015 260);
+  --foreground: oklch(0.96 0.005 240);
+  --card: oklch(0.155 0.018 260);
+  --card-foreground: oklch(0.96 0.005 240);
+  --popover: oklch(0.155 0.018 260);
+  --popover-foreground: oklch(0.96 0.005 240);
+  --primary: oklch(0.7 0.19 48);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.19 0.02 260);
+  --secondary-foreground: oklch(0.96 0.005 240);
+  --muted: oklch(0.19 0.02 260);
+  --muted-foreground: oklch(0.65 0.015 250);
+  --accent: oklch(0.22 0.025 260);
+  --accent-foreground: oklch(0.96 0.005 240);
+  --destructive: oklch(0.58 0.22 28);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.22 0.018 260);
+  --input: oklch(0.22 0.018 260);
+  --ring: oklch(0.7 0.19 48);
+  --success: oklch(0.62 0.17 145);
+  --success-soft: oklch(0.2 0.04 145);
+  --warning: oklch(0.72 0.16 75);
+  --warning-soft: oklch(0.22 0.05 75);
+  --danger: oklch(0.6 0.22 28);
+  --danger-soft: oklch(0.22 0.05 25);
+  --info: oklch(0.62 0.16 240);
+  --sidebar: oklch(0.09 0.015 260);
+  --sidebar-foreground: oklch(0.96 0.005 240);
+  --sidebar-muted: oklch(0.6 0.015 250);
+  --sidebar-primary: oklch(0.7 0.19 48);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.16 0.02 260);
+  --sidebar-border: oklch(0.18 0.018 260);
+  --sidebar-ring: oklch(0.7 0.19 48);
+  --sidebar-danger: oklch(0.58 0.22 28);
+  --sidebar-danger-foreground: oklch(1 0 0);
+  --brand-mark: oklch(0.7 0.19 48);
+  --brand-mark-foreground: oklch(1 0 0);
+  --brand-accent: oklch(0.72 0.18 52);
+  --overlay: oklch(0.05 0.01 260 / 70%);
+  --shadow-panel: 0 1px 3px 0 rgb(0 0 0 / 0.25), 0 1px 2px -1px rgb(0 0 0 / 0.2);
+  --shadow-float: 0 12px 32px -4px rgb(0 0 0 / 0.45), 0 4px 12px -2px rgb(0 0 0 / 0.25);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html {
+    font-family:
+      "Inter",
+      "Plus Jakarta Sans",
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      Roboto,
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    font-family:
+      "Inter",
+      "Plus Jakarta Sans",
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      Roboto,
+      sans-serif;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    letter-spacing: -0.011em;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family:
+      "Inter",
+      "Plus Jakarta Sans",
+      -apple-system,
+      BlinkMacSystemFont,
+      sans-serif;
+    letter-spacing: -0.02em;
+  }
+  button,
+  input,
+  select,
+  textarea {
+    font-family: inherit;
+    cursor: pointer;
+  }
+  button:focus-visible,
+  select:focus-visible,
+  input:focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+  .font-mono {
+    font-family: "JetBrains Mono", "IBM Plex Mono", monospace !important;
+    font-feature-settings:
+      "tnum" 1,
+      "zero" 1;
+  }
+}
+
+@utility status-critical {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+@utility status-attention {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+@utility status-healthy {
+  background: var(--success-soft);
+  color: var(--success);
+}
+@utility risk-critical {
+  border-top: 3px solid var(--danger);
+}
+@utility risk-attention {
+  border-top: 3px solid var(--warning);
+}
+@utility risk-icon-critical {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+@utility risk-icon-attention {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+@utility dot-critical {
+  background: var(--danger);
+}
+@utility dot-attention {
+  background: var(--warning);
+}
+@utility dot-healthy {
+  background: var(--success);
+}
+@utility progress-critical {
+  background: var(--danger);
+}
+@utility progress-attention {
+  background: var(--warning);
+}
+@utility progress-healthy {
+  background: var(--success);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

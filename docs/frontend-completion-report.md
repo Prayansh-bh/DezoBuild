@@ -11,6 +11,7 @@
 A comprehensive frontend architecture audit was executed on the DEZOBUILD codebase (documented in [`docs/frontend-audit.md`](./frontend-audit.md)). The original codebase contained an interactive Owner Dashboard (`/`) built with TanStack Start, Tailwind CSS (OKLCH color space), and Radix UI primitives. However, all subsequent domain workspaces (Projects, Materials, Finance, People, Equipment, Alerts, Reports, Documents, and Settings) were absent or unlinked.
 
 Through a structured, 11-phase implementation plan, the entire DEZOBUILD SaaS frontend suite was constructed with strict adherence to:
+
 - **Single Responsibility Principle (SRP)**: Clean separation of UI views, shared reusable components, and in-memory centralized mock domain store.
 - **Visual Design System**: Preservation of `Source Sans 3`, `IBM Plex Mono`, and the curated OKLCH semantic color palette (`hsl(var(--primary))`, `hsl(var(--brand-accent))`, `hsl(var(--status-*))`).
 - **Zero Pseudo-Backend Bloat**: No mock database or server emulation inside the frontend; state is managed via a clean, reactive, observable in-memory store (`mockStore` with `useSyncExternalStore`).
@@ -20,20 +21,20 @@ Through a structured, 11-phase implementation plan, the entire DEZOBUILD SaaS fr
 
 ## 2. Completed Modules & Feature Workspaces
 
-| Module | Route | Key Capabilities |
-| :--- | :--- | :--- |
-| **Owner Dashboard** | `/` | Portfolio health summary, cash flow burn, budget variance, live critical alerts, active project cards, quick action links |
-| **Projects List** | `/projects` | Search, status/health filters, card grid & data table views, budget progress bars, SPI/CPI indicators |
-| **Create Project Wizard** | `/projects/new` | 7-step progressive wizard: Basic Info, Location, Schedule, Budgeting, Team Assignment, Document Upload, Final Review & Commit |
-| **Project 360 Drill-Down** | `/projects/$id` | 10 connected tabs: Overview, WBS Tree, DPR Submissions, Materials, Expenses, Labour, Equipment, Billing/Payments, Documents, Alerts |
-| **Materials & Inventory** | `/materials` | Material Master, Indents with priority workflows, Purchase Orders (POs) with tax calculation, Goods Receipt Notes (GRN) with inspection/rejection, Store Inventory levels, Material Issues & Requisitions, Stock Transfers |
-| **Finance & Cashflow** | `/finance` | Expense Vouchers, Payment Scheduling & Aging, Contractor Advances, Vendor Directory with Outstanding Balance, Subcontractor Ledger, Budget vs Actual variance matrix |
-| **People & Labour** | `/people` | Mobile-first Daily Attendance Muster Roll, Overtime calculation, Labour Gang Contracts, Staff Directory with Onboarding modal |
-| **Plant & Machinery** | `/equipment` | Fleet Master (Owned & Rented), Hour meter tracking, Daily Diesel Fuel Issuance logbook, Preventive & Breakdown Maintenance ticketing |
-| **Smart Alert Center** | `/alerts` | Root Cause Analysis (RCA), Financial impact calculation, Source WBS activity tracing, One-click Acknowledge/Resolve state mutations |
-| **Analytical Reports** | `/reports` | 7 Analytical report categories (Progress S-Curve, Cost to Complete, Material Wastage, Labour Productivity, Equipment Utilization, Cashflow Forecast, DPR Summary) with PDF & XLSX simulated exports |
-| **Document Management** | `/documents` | GFC Structural Drawings, Contracts, Invoices, Soil Reports, Municipal Approvals, Revision tracking, Document Previewer, Drag & Drop Upload |
-| **Company Settings** | `/settings` | Organization profile, Team Members, Role-Based Access Control (RBAC) Permission Matrix, SaaS Plan & Billing, Notification Preferences |
+| Module                     | Route           | Key Capabilities                                                                                                                                                                                                           |
+| :------------------------- | :-------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Owner Dashboard**        | `/`             | Portfolio health summary, cash flow burn, budget variance, live critical alerts, active project cards, quick action links                                                                                                  |
+| **Projects List**          | `/projects`     | Search, status/health filters, card grid & data table views, budget progress bars, SPI/CPI indicators                                                                                                                      |
+| **Create Project Wizard**  | `/projects/new` | 7-step progressive wizard: Basic Info, Location, Schedule, Budgeting, Team Assignment, Document Upload, Final Review & Commit                                                                                              |
+| **Project 360 Drill-Down** | `/projects/$id` | 10 connected tabs: Overview, WBS Tree, DPR Submissions, Materials, Expenses, Labour, Equipment, Billing/Payments, Documents, Alerts                                                                                        |
+| **Materials & Inventory**  | `/materials`    | Material Master, Indents with priority workflows, Purchase Orders (POs) with tax calculation, Goods Receipt Notes (GRN) with inspection/rejection, Store Inventory levels, Material Issues & Requisitions, Stock Transfers |
+| **Finance & Cashflow**     | `/finance`      | Expense Vouchers, Payment Scheduling & Aging, Contractor Advances, Vendor Directory with Outstanding Balance, Subcontractor Ledger, Budget vs Actual variance matrix                                                       |
+| **People & Labour**        | `/people`       | Mobile-first Daily Attendance Muster Roll, Overtime calculation, Labour Gang Contracts, Staff Directory with Onboarding modal                                                                                              |
+| **Plant & Machinery**      | `/equipment`    | Fleet Master (Owned & Rented), Hour meter tracking, Daily Diesel Fuel Issuance logbook, Preventive & Breakdown Maintenance ticketing                                                                                       |
+| **Smart Alert Center**     | `/alerts`       | Root Cause Analysis (RCA), Financial impact calculation, Source WBS activity tracing, One-click Acknowledge/Resolve state mutations                                                                                        |
+| **Analytical Reports**     | `/reports`      | 7 Analytical report categories (Progress S-Curve, Cost to Complete, Material Wastage, Labour Productivity, Equipment Utilization, Cashflow Forecast, DPR Summary) with PDF & XLSX simulated exports                        |
+| **Document Management**    | `/documents`    | GFC Structural Drawings, Contracts, Invoices, Soil Reports, Municipal Approvals, Revision tracking, Document Previewer, Drag & Drop Upload                                                                                 |
+| **Company Settings**       | `/settings`     | Organization profile, Team Members, Role-Based Access Control (RBAC) Permission Matrix, SaaS Plan & Billing, Notification Preferences                                                                                      |
 
 ---
 
@@ -147,13 +148,16 @@ The frontend demonstrates fully interconnected, cross-module data flow:
 ## 8. Typecheck and Production Build Results
 
 ### TypeScript Verification
+
 ```bash
 $ npx tsc --noEmit
 Exit Code: 0 (Zero errors)
 ```
+
 - Strict compiler flags verified (`noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true`).
 
 ### Production Build
+
 ```bash
 $ npm run build
 Exit Code: 0 (Zero errors)
@@ -167,6 +171,7 @@ Client Bundle: .output/public (Vite SSR + Nitro Cloudflare preset)
 When transitioning from this prototype to a production NestJS / PostgreSQL backend, the following mapping is recommended:
 
 ### Recommended Domain Entities (Prisma / TypeORM)
+
 1. **`Organization`**: Multi-tenant root, company settings, subscriptions.
 2. **`User` & `RolePermission`**: RBAC permissions matching the `/settings` matrix.
 3. **`Project`**: Core construction project entity (budget, location, dates, health metrics).
@@ -180,6 +185,7 @@ When transitioning from this prototype to a production NestJS / PostgreSQL backe
 11. **`DocumentRecord`**: S3/GCS file storage metadata, versioning, drawing revisions.
 
 ### Recommended API Endpoints
+
 - `GET /api/v1/projects`, `POST /api/v1/projects`, `GET /api/v1/projects/:id/360`
 - `GET /api/v1/wbs?projectId=:id`, `POST /api/v1/wbs`
 - `GET /api/v1/dpr?projectId=:id`, `POST /api/v1/dpr`

@@ -1,0 +1,23 @@
+{
+  "name": "@dezobuild/backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DEZOBUILD Construction Operating System - Backend Architecture & API Service",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "dev": "tsx watch src/main.ts",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.16.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.3"
+  }
+}

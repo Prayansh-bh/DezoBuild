@@ -1,10 +1,8 @@
-<!-- LOVABLE:BEGIN -->
-> [!IMPORTANT]
-> This project is connected to [Lovable](https://lovable.dev). Avoid rewriting
-> published git history — force pushing, or rebasing/amending/squashing commits
-> that are already pushed — as it rewrites history on Lovable's side and the
-> user will likely lose their project history.
->
-> Commits you push to the connected branch sync back to Lovable and show up in
-> the editor, so keep the branch in a working state.
-<!-- LOVABLE:END -->
+# DEZOBUILD Engineering Guidelines & Architecture Rules
+
+This repository contains the DEZOBUILD multi-tenant construction operating system:
+- `frontend/`: Customer / Tenant Web Application (`app.dezobuild.com`)
+- `owner/`: Platform Owner Governance Control Hub (`owner.dezobuild.com`)
+- `backend/`: REST API, Domain Contracts, Prisma Repositories
+- `docs/architecture/`: Authoritative Domain Specifications, RBAC Models, and Entity Actions
+- `tests/`: Automated Vitest unit and end-to-end test suites

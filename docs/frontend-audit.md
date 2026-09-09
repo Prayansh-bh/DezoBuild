@@ -2,17 +2,17 @@
 
 **Date:** September 7, 2026  
 **Project:** DEZOBUILD Construction Management SaaS  
-**Framework:** React 19 + TanStack Start (SSR/Vite) + TanStack Router + Tailwind CSS v4 + Radix UI / shadcn/ui  
+**Framework:** React 19 + TanStack Start (SSR/Vite) + TanStack Router + Tailwind CSS v4 + Radix UI / shadcn/ui
 
 ---
 
 ## 1. Current Architecture Overview
 
-- **Core Stack:** 
+- **Core Stack:**
   - **Framework:** Vite 8.1.5 + TanStack Start (`@tanstack/react-start` 1.168.32) + `@tanstack/react-router` 1.170.18
   - **UI Library & Components:** React 19, Tailwind CSS v4 (`@tailwindcss/vite`), Radix UI primitives, Lucide React icons, Recharts, Sonner.
   - **Data Layer:** `@tanstack/react-query` v5 configured in `src/router.tsx` and `src/routes/__root.tsx`.
-  - **Server/SSR:** Nitro server runner integrated via `@lovable.dev/vite-tanstack-config` with custom SSR error handling in `src/server.ts` and `src/start.ts`.
+  - **Server/SSR:** Nitro server runner integrated via `@tanstack/react-start/plugin/vite` with custom SSR error handling in `src/server.ts` and `src/start.ts`.
   - **Design Tokens:** Defined in `src/styles.css` using OKLCH color space for high gamut clarity (Brand Safety Amber/Orange, Charcoal Sidebar, Muted backgrounds, Semantic status styles for `critical`, `attention`, `healthy`).
 - **Baseline Verification:**
   - `npm run build`: Succeeded with Nitro preset `cloudflare-module` and client/SSR chunk outputs.
@@ -22,30 +22,32 @@
 
 ## 2. Existing Routes & Navigation
 
-| Route | Status | Description |
-|---|---|---|
-| `/` | Completed Prototype | Owner Dashboard with sample metrics, risk alert cards, financial overview, and site pulse summary. (Currently inlines layout). |
-| `/projects` | Missing | Referenced in navigation and sidebar, currently not implemented. |
-| `/projects/$id` | Missing | Critical Project 360° detail view with WBS, Progress, DPR, Materials, Finance, Labour, Equipment. |
-| `/projects/new` | Missing | Multi-step progressive project creation workflow. |
-| `/materials` | Missing | Material Master, Indents, POs, GRN, Inventory, Issues, Returns, Stock Transfers, Consumption. |
-| `/finance` | Missing | Expenses, Payments, Advances, Vendors, Contractors, Budget vs Actual variance. |
-| `/people` | Missing | Employees, Labour contracts, Mobile-first Attendance marking, Allocations, Advances. |
-| `/equipment` | Missing | Fleet overview (Running, Idle, Breakdown, Maintenance), Logbook, Fuel tracking. |
-| `/alerts` | Missing | Actionable smart alert centre with financial/operational impact and drill-downs. |
-| `/reports` | Missing | Unified reporting suite (Progress, Cost, Material, Labour, Equipment, Financial, DPR) with export preview. |
-| `/documents` | Missing | Document manager (Drawings, Contracts, Invoices, Compliance, Site Photos) with project filtering & preview. |
-| `/settings` | Missing | Company profile, Users, Roles & Permissions matrix, Subscription usage, Preferences. |
+| Route           | Status              | Description                                                                                                                    |
+| --------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `/`             | Completed Prototype | Owner Dashboard with sample metrics, risk alert cards, financial overview, and site pulse summary. (Currently inlines layout). |
+| `/projects`     | Missing             | Referenced in navigation and sidebar, currently not implemented.                                                               |
+| `/projects/$id` | Missing             | Critical Project 360° detail view with WBS, Progress, DPR, Materials, Finance, Labour, Equipment.                              |
+| `/projects/new` | Missing             | Multi-step progressive project creation workflow.                                                                              |
+| `/materials`    | Missing             | Material Master, Indents, POs, GRN, Inventory, Issues, Returns, Stock Transfers, Consumption.                                  |
+| `/finance`      | Missing             | Expenses, Payments, Advances, Vendors, Contractors, Budget vs Actual variance.                                                 |
+| `/people`       | Missing             | Employees, Labour contracts, Mobile-first Attendance marking, Allocations, Advances.                                           |
+| `/equipment`    | Missing             | Fleet overview (Running, Idle, Breakdown, Maintenance), Logbook, Fuel tracking.                                                |
+| `/alerts`       | Missing             | Actionable smart alert centre with financial/operational impact and drill-downs.                                               |
+| `/reports`      | Missing             | Unified reporting suite (Progress, Cost, Material, Labour, Equipment, Financial, DPR) with export preview.                     |
+| `/documents`    | Missing             | Document manager (Drawings, Contracts, Invoices, Compliance, Site Photos) with project filtering & preview.                    |
+| `/settings`     | Missing             | Company profile, Users, Roles & Permissions matrix, Subscription usage, Preferences.                                           |
 
 ---
 
 ## 3. Reusable Components & UI System
 
 ### Existing Reusable Components:
+
 - **`src/components/app-shell.tsx`**: Complete responsive layout shell with desktop sidebar, mobile drawer, mobile bottom bar, header with workspace breadcrumb, search bar, notification button, and quick-add launcher.
 - **`src/components/ui/*`**: 46 pre-built Radix UI + Tailwind component wrappers (Accordion, Alert, Badge, Button, Calendar, Card, Dialog, Drawer, Dropdown, Form, Input, Progress, Select, Sheet, Table, Tabs, etc.).
 
 ### Components Needed for Construction SaaS UX:
+
 - **PageHeader & MetricCard**: Standardized page headers with action slots, breadcrumbs, period selectors, and KPI tiles.
 - **Construction Status System**: Visual badges & indicators for Project Health (`Critical`, `Attention`, `Healthy`), Work Order & Workflow states (`Draft`, `Pending Approval`, `Approved`, `Rejected`, `Active`, `Completed`).
 - **Connected Quick Add Modals**: Fast 2-step modals for Site Engineers & Managers (Expense, Material Receipt/GRN, Material Issue, Progress Update, Attendance, DPR).
@@ -78,6 +80,7 @@
 ## 6. Implementation Sequence
 
 Following the master specification:
+
 1. **Design System & Mock Architecture**: Centralize connected mock store (`src/mock/*`), standard shared components (`PageHeader`, `DataTable`, `StatusBadge`, `QuickAddModal`).
 2. **Projects Module**: `/projects`, `/projects/$id`, `/projects/new` (with WBS, activities, progress, timeline).
 3. **Daily Progress / DPR Module**: Interactive mobile-friendly DPR workflow with photos, manpower, equipment, materials.
