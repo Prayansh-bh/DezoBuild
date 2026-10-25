@@ -75,8 +75,9 @@ export const environmentSchema = z
       .default(50),
   })
   .superRefine((data, ctx) => {
-    // In production, reject wildcard CORS origin
-    if (data.NODE_ENV === "production" && data.CORS_ORIGINS.includes("*")) {
+    // In production, reject bare wildcard CORS origin
+    const rawOrigins = data.CORS_ORIGINS.split(",").map((o) => o.trim());
+    if (data.NODE_ENV === "production" && rawOrigins.includes("*")) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["CORS_ORIGINS"],

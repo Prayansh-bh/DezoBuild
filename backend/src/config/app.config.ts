@@ -92,7 +92,14 @@ export function loadAndValidateConfig(envSource: Record<string, unknown> = proce
       isOriginAllowed(origin?: string): boolean {
         if (!origin) return true; // Allow non-browser requests (e.g. curl, health checkers)
         if (origins.includes("*") && env.NODE_ENV !== "production") return true;
-        return origins.includes(origin);
+        return origins.some((allowed) => {
+          if (allowed === origin) return true;
+          if (allowed.includes("*") && origin) {
+            const pattern = new RegExp("^" + allowed.replace(/\./g, "\\.").replace(/\*/g, ".*") + "$");
+            return pattern.test(origin);
+          }
+          return false;
+        });
       },
     },
     logging: {
