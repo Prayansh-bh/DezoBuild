@@ -36,3 +36,4 @@ dist-ssr
 scratch/
 backend/scratch/
 backend/test-prisma.ts
+.neon
