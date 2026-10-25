@@ -10,10 +10,12 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as AlertsIndexRouteImport } from './routes/alerts/index'
 import { Route as DocumentsIndexRouteImport } from './routes/documents/index'
 import { Route as EquipmentIndexRouteImport } from './routes/equipment/index'
 import { Route as FinanceIndexRouteImport } from './routes/finance/index'
+import { Route as InviteTokenRouteImport } from './routes/invite/$token'
 import { Route as MaterialsIndexRouteImport } from './routes/materials/index'
 import { Route as PeopleIndexRouteImport } from './routes/people/index'
 import { Route as ProjectsIndexRouteImport } from './routes/projects/index'
@@ -25,6 +27,11 @@ import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AlertsIndexRoute = AlertsIndexRouteImport.update({
@@ -45,6 +52,11 @@ const EquipmentIndexRoute = EquipmentIndexRouteImport.update({
 const FinanceIndexRoute = FinanceIndexRouteImport.update({
   id: '/finance/',
   path: '/finance/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InviteTokenRoute = InviteTokenRouteImport.update({
+  id: '/invite/$token',
+  path: '/invite/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MaterialsIndexRoute = MaterialsIndexRouteImport.update({
@@ -85,6 +97,8 @@ const SettingsIndexRoute = SettingsIndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/projects/$id': typeof ProjectsIdRoute
   '/projects/new': typeof ProjectsNewRoute
   '/alerts/': typeof AlertsIndexRoute
@@ -99,6 +113,8 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/projects/$id': typeof ProjectsIdRoute
   '/projects/new': typeof ProjectsNewRoute
   '/alerts': typeof AlertsIndexRoute
@@ -114,6 +130,8 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/projects/$id': typeof ProjectsIdRoute
   '/projects/new': typeof ProjectsNewRoute
   '/alerts/': typeof AlertsIndexRoute
@@ -130,6 +148,8 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/login'
+    | '/invite/$token'
     | '/projects/$id'
     | '/projects/new'
     | '/alerts/'
@@ -144,6 +164,8 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/login'
+    | '/invite/$token'
     | '/projects/$id'
     | '/projects/new'
     | '/alerts'
@@ -158,6 +180,8 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/login'
+    | '/invite/$token'
     | '/projects/$id'
     | '/projects/new'
     | '/alerts/'
@@ -173,6 +197,8 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  LoginRoute: typeof LoginRoute
+  InviteTokenRoute: typeof InviteTokenRoute
   ProjectsIdRoute: typeof ProjectsIdRoute
   ProjectsNewRoute: typeof ProjectsNewRoute
   AlertsIndexRoute: typeof AlertsIndexRoute
@@ -193,6 +219,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/alerts/': {
@@ -221,6 +254,13 @@ declare module '@tanstack/react-router' {
       path: '/finance'
       fullPath: '/finance/'
       preLoaderRoute: typeof FinanceIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/invite/$token': {
+      id: '/invite/$token'
+      path: '/invite/$token'
+      fullPath: '/invite/$token'
+      preLoaderRoute: typeof InviteTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/materials/': {
@@ -277,6 +317,8 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  LoginRoute: LoginRoute,
+  InviteTokenRoute: InviteTokenRoute,
   ProjectsIdRoute: ProjectsIdRoute,
   ProjectsNewRoute: ProjectsNewRoute,
   AlertsIndexRoute: AlertsIndexRoute,

@@ -1,19 +1,19 @@
-export interface SmartAlertDto {
-  id: string;
-  type: "variance" | "inventory" | "delay" | "labour" | "compliance" | "safety";
-  severity: "critical" | "warning" | "info";
-  title: string;
-  description: string;
-  projectId?: string;
-  projectName?: string;
-  status: "active" | "acknowledged" | "resolved";
-  recommendedAction: string;
-  createdAt: string;
-  resolvedAt?: string;
-}
-
-export interface AlertsServiceContract {
-  findAll(status?: "active" | "acknowledged" | "resolved"): Promise<SmartAlertDto[]>;
-  acknowledge(id: string, userId: string): Promise<SmartAlertDto>;
-  resolve(id: string, note?: string): Promise<SmartAlertDto>;
-}
+export * from './constants/outbox.constants.js';
+export * from './constants/alert.constants.js';
+export * from './dto/outbox.dto.js';
+export * from './dto/alert.dto.js';
+export * from './dto/notification.dto.js';
+export * from './repositories/outbox.repository.js';
+export * from './repositories/alert.repository.js';
+export * from './repositories/notification.repository.js';
+export * from './services/alert.service.js';
+export * from './services/notification.service.js';
+export * from './services/outbox-worker.service.js';
+export * from './helpers/outbox-writer.js';
+export * from './helpers/event.registry.js';
+export * from './helpers/domain-event.handlers.js';
+export * from './providers/notification-provider.interface.js';
+export * from './providers/in-app-notification.provider.js';
+export * from './controllers/alerts.controller.js';
+export * from './controllers/notifications.controller.js';
+export * from './alerts.routes.js';

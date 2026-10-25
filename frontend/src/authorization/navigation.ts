@@ -37,6 +37,7 @@ export interface NavigationResolutionParams {
   tenantId?: string | undefined;
   projectAssignments?: string[] | undefined;
   siteAssignments?: string[] | undefined;
+  effectiveFeatures?: Record<string, boolean> | undefined;
 }
 
 export interface ResolvedNavigation {
@@ -45,6 +46,12 @@ export interface ResolvedNavigation {
   activeRole: CustomerRoleType;
   totalVisible: number;
 }
+
+export const NAV_FEATURE_MAP: Partial<Record<CanonicalNavKey, string>> = {
+  PROJECTS: "projects:core",
+  PROCUREMENT_STORE: "materials:core",
+  FINANCE_COMMERCIAL: "finance:commercial",
+};
 
 // Canonical Nav Items with authoritative terminology
 export const CANONICAL_NAV_ITEMS = {
@@ -85,7 +92,7 @@ export const CANONICAL_NAV_ITEMS = {
   },
   PLANT_EQUIPMENT: {
     id: "plant_equipment",
-    label: "Plant & Equipment",
+    label: "Machinery & Equipment",
     to: "/equipment",
     icon: Truck,
     domainId: "plant_equipment",
@@ -256,7 +263,7 @@ function getRoleSpecificLabel(role: CustomerRoleType, key: CanonicalNavKey, defa
  * Authoritative Navigation Resolver
  */
 export function resolveNavigation(params: NavigationResolutionParams): ResolvedNavigation {
-  const { role, permissions } = params;
+  const { role, permissions, effectiveFeatures } = params;
   const navKeys = ROLE_NAV_PROJECTIONS[role] ?? ROLE_NAV_PROJECTIONS.COMPANY_OWNER;
 
   const primaryItems: NavItemConfig[] = [];
@@ -264,6 +271,12 @@ export function resolveNavigation(params: NavigationResolutionParams): ResolvedN
   for (const key of navKeys) {
     const item = CANONICAL_NAV_ITEMS[key];
     if (!item) continue;
+
+    // Feature activation gating: if feature is explicitly false in effectiveFeatures, skip
+    const featureKey = NAV_FEATURE_MAP[key];
+    if (featureKey && effectiveFeatures && effectiveFeatures[featureKey] === false) {
+      continue;
+    }
 
     const contextualLabel = getRoleSpecificLabel(role, key, item.label);
 

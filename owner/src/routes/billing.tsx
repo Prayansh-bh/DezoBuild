@@ -16,9 +16,10 @@ import { StatusBadge } from "../components/shared/status-badge";
 import { EmptyState } from "../components/shared/empty-state";
 import { MOCK_INVOICES, MOCK_TELEMETRY } from "../mock/platform-data";
 import type { InvoiceStatus, PlatformInvoice } from "../types";
+import { downloadCsv } from "../lib/export-utils";
 
 export function BillingView() {
-  const [invoices, setInvoices] = useState<PlatformInvoice[]>(MOCK_INVOICES);
+  const invoices = MOCK_INVOICES;
   const [filter, setFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
 
@@ -39,6 +40,21 @@ export function BillingView() {
       inv.invoiceNumber.toLowerCase().includes(search.toLowerCase());
     return matchesFilter && matchesSearch;
   });
+
+  const handleExportCsv = () => {
+    const headers = ["Invoice #", "Tenant Organization", "Plan Tier", "Amount (INR)", "Status", "Issued Date", "Due Date", "Gateway"];
+    const rows = filtered.map((inv) => [
+      inv.invoiceNumber,
+      inv.tenantName,
+      inv.plan,
+      inv.amount,
+      inv.status,
+      inv.issuedDate,
+      inv.dueDate,
+      inv.gateway,
+    ]);
+    downloadCsv("platform-gst-invoices.csv", headers, rows);
+  };
 
   const statItems: StatItem[] = [
     {
@@ -72,9 +88,12 @@ export function BillingView() {
         title="Platform Billing & SaaS Collections"
         subtitle="Global customer invoice ledger, payment gateway reconciliations, and automated dunning workflows."
         actions={
-          <button className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3.5 py-2 text-xs font-semibold text-foreground transition-all hover:bg-muted shadow-panel cursor-pointer">
+          <button
+            onClick={handleExportCsv}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3.5 py-2 text-xs font-semibold text-foreground transition-all hover:bg-muted shadow-panel cursor-pointer"
+          >
             <Download className="size-4 text-muted-foreground" />
-            <span>Export GST Invoices (ZIP)</span>
+            <span>Export Invoices (CSV)</span>
           </button>
         }
       />

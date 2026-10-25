@@ -34,7 +34,21 @@ import {
   calculateEarnedValueEAC,
   calculateWorkReadinessScore,
 } from "@/lib/calculations";
-import { formatCurrency, mockStore, useMockStore } from "@/mock";
+import { formatCurrency, mockStore, useMockStore, useContextualData } from "@/mock";
+import {
+  useProjectDetail,
+  useProjectWbs,
+  useProjectBoq,
+  useProjectDprs,
+  useProjectDigitalMb,
+  useCreateWbsNode,
+  useCreateDpr,
+  useCreateBoqItem,
+  useCreateDigitalMbEntry,
+  useVerifyDigitalMbEntry,
+} from "@/hooks/api";
+import { adaptProject } from "@/lib/api/adapters";
+import { downloadCsv } from "@/lib/export-utils";
 import type {
   BoqItem,
   DigitalMbRecord,
@@ -105,11 +119,11 @@ export const Route = createFileRoute("/projects/$id")({
 
 function ProjectDetailPage() {
   const params = useParams({ from: "/projects/$id" });
+  const store = useMockStore();
+  const contextual = useContextualData();
+  const { data: projectDetailData, isLoading: isProjectLoading, isError: isProjectError } = useProjectDetail(params.id);
+
   const {
-    projects,
-    wbsActivities,
-    boqItems,
-    digitalMbs,
     lookaheadItems,
     pourCards,
     ncrs,
@@ -117,16 +131,17 @@ function ProjectDetailPage() {
     safetyIncidents,
     drawings,
     rfis,
-    dprRecords,
-    materials,
-    indents,
-    expenses,
     payments,
     labourContractors,
-    equipment,
-    alerts,
-    documents,
-  } = useMockStore();
+  } = store;
+
+  const projects = contextual.projects.length > 0 ? contextual.projects : store.projects;
+  const materials = contextual.materials.length > 0 ? contextual.materials : store.materials;
+  const indents = contextual.indents.length > 0 ? contextual.indents : store.indents;
+  const expenses = contextual.expenses.length > 0 ? contextual.expenses : store.expenses;
+  const equipment = contextual.equipment.length > 0 ? contextual.equipment : store.equipment;
+  const alerts = contextual.alerts.length > 0 ? contextual.alerts : store.alerts;
+  const documents = contextual.documents.length > 0 ? contextual.documents : store.documents;
 
   const notify = useNotify();
   const { user } = useCurrentUser();
@@ -137,17 +152,20 @@ function ProjectDetailPage() {
   const canCreateWbs = hasPermission(role, "wbs.create");
   const canCreateDpr = hasPermission(role, "dpr.create");
 
-  // Find project by id or fallback to first
-  const project = projects.find((p) => p.id === params.id) || projects[0];
+  // Find project by id from live backend detail or list
+  const liveProject = projectDetailData ? adaptProject(projectDetailData) : projects.find((p) => p.id === params.id);
+  const project = liveProject || projects[0];
 
   if (!project) {
     return (
-      <AppShell crumb="Project Not Found">
+      <AppShell crumb={isProjectLoading ? "Loading Project..." : "Project Not Found"}>
         <div className="p-12 text-center">
-          <p className="font-bold text-base">Project Not Found</p>
-          <Button asChild className="mt-4">
-            <Link to={"/projects" as any}>Return to Projects</Link>
-          </Button>
+          <p className="font-bold text-base">{isProjectLoading ? "Loading project details from backend..." : "Project Not Found"}</p>
+          {!isProjectLoading && (
+            <Button asChild className="mt-4">
+              <Link to={"/projects" as any}>Return to Projects</Link>
+            </Button>
+          )}
         </div>
       </AppShell>
     );
@@ -167,10 +185,53 @@ function ProjectDetailPage() {
   const [qaSafetySubTab, setQaSafetySubTab] = useState<"pour_cards" | "ncrs" | "safety_walks" | "incidents">("pour_cards");
   const [docsSubTab, setDocsSubTab] = useState<"drawings" | "rfi" | "files">("drawings");
 
-  // Filtered Project-specific Data
-  const projWbs = wbsActivities.filter((w) => w.projectId === project.id);
-  const projBoq = boqItems.filter((b) => b.projectId === project.id);
-  const projDmb = digitalMbs.filter((m) => m.projectId === project.id);
+  // API Hooks
+  const { data: rawWbs = [], isLoading: isWbsLoading } = useProjectWbs(project?.id);
+  const { data: rawBoq = [], isLoading: isBoqLoading } = useProjectBoq(project?.id);
+  const { data: rawDprs = [], isLoading: isDprLoading } = useProjectDprs(project?.id);
+  const { data: rawMbs = [], isLoading: isMbLoading } = useProjectDigitalMb(project?.id);
+  
+  const createWbsMutation = useCreateWbsNode();
+  const createDprMutation = useCreateDpr();
+  const createBoqMutation = useCreateBoqItem();
+  const createMbMutation = useCreateDigitalMbEntry();
+  const verifyMbMutation = useVerifyDigitalMbEntry();
+
+  // Filtered Project-specific Data & Presentation Mapping
+  const projWbs = rawWbs.map((w: any) => ({
+    ...w,
+    category: "WBS Node",
+    unit: "-",
+    plannedQty: 0,
+    actualQty: 0,
+    plannedCost: w.plannedBudget || 0,
+    actualCost: 0,
+    actualProgress: 0,
+    status: "active",
+    assignedGang: "-",
+    startDate: "-",
+    endDate: "-"
+  }));
+
+  const projBoq = rawBoq.map((b: any) => ({
+    ...b,
+    boqItemNo: b.itemCode,
+    wbsCode: "-",
+    plannedQty: b.quantity,
+    plannedRate: b.rate,
+    plannedAmount: b.amount,
+    actualQty: 0,
+    actualAmount: 0,
+    status: "active"
+  }));
+
+  const projDmb = rawMbs.map((m: any) => ({
+    ...m,
+    boqItemNo: m.boqItemId,
+    mbDate: m.createdAt,
+    recordedBy: "Self"
+  }));
+
   const projLookahead = lookaheadItems.filter((l) => l.projectId === project.id);
   const projPourCards = pourCards.filter((p) => p.projectId === project.id);
   const projNcrs = ncrs.filter((n) => n.projectId === project.id);
@@ -178,7 +239,25 @@ function ProjectDetailPage() {
   const projSafetyIncidents = safetyIncidents.filter((s) => s.projectId === project.id);
   const projDrawings = drawings.filter((d) => d.projectId === project.id);
   const projRfis = rfis.filter((r) => r.projectId === project.id);
-  const projDprs = dprRecords.filter((d) => d.projectId === project.id);
+  const projDprs = rawDprs.map((d: any) => ({
+    ...d,
+    id: d.id || `dpr-${Math.random()}`,
+    projectId: project.id,
+    projectName: project.name,
+    dprNumber: d.dprNumber || "DPR-XXX",
+    date: d.reportDate || d.date || new Date().toISOString().slice(0, 10),
+    shift: d.shift || "Day",
+    status: d.status || "submitted",
+    submittedBy: d.submittedBy || { name: "Site Engineer", role: "Engineer" },
+    weather: d.weather || "Clear",
+    temperature: d.temperature || "25°C",
+    manpower: d.manpower || [],
+    equipment: d.equipment || [],
+    materials: d.materials || [],
+    workExecutedSummary: d.workExecutedSummary || [],
+    safetyRemarks: d.siteConditions || "Normal working conditions.",
+    attachments: d.attachments || []
+  })) as DprRecord[];
   const projExpenses = expenses.filter((e) => e.projectId === project.id);
   const projPayments = payments.filter((p) => p.projectId === project.id);
   const projIndents = indents.filter((i) => i.projectId === project.id);
@@ -204,6 +283,8 @@ function ProjectDetailPage() {
   const [selectedPhoto, setSelectedPhoto] = useState<DprPhoto | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<DocumentItem | null>(null);
   const [viewDpr, setViewDpr] = useState<DprRecord | null>(null);
+  const [selectedPourCard, setSelectedPourCard] = useState<PourCardRecord | null>(null);
+  const [selectedDrawing, setSelectedDrawing] = useState<DrawingRecord | null>(null);
 
   // Form States - WBS
   const [wbsCode, setWbsCode] = useState(`2.${projWbs.length + 1}`);
@@ -266,57 +347,54 @@ function ProjectDetailPage() {
   const [rfiPriority, setRfiPriority] = useState<"low" | "medium" | "high" | "critical">("high");
   const [rfiDueDate, setRfiDueDate] = useState(new Date().toISOString().slice(0, 10));
 
-  // Handlers
-  const handleAddWbs = (e: React.FormEvent) => {
+  const handleAddWbs = async (e: React.FormEvent) => {
     e.preventDefault();
     const qty = parseFloat(wbsPlannedQty) || 100;
     const rate = parseFloat(wbsPlannedRate) || 1000;
-    mockStore.addWbsActivity({
-      projectId: project.id,
-      parentId: null,
-      code: wbsCode,
-      name: wbsName || "New Work Activity",
-      category: wbsCategory,
-      unit: wbsUnit,
-      plannedQty: qty,
-      actualQty: 0,
-      plannedRate: rate,
-      actualRate: rate,
-      plannedCost: qty * rate,
-      actualCost: 0,
-      plannedProgress: 0,
-      actualProgress: 0,
-      startDate: new Date().toISOString().slice(0, 10),
-      endDate: project.targetCompletion,
-      status: "not_started",
-      assignedGang: wbsGang,
-    });
-    notify(`Activity "${wbsName}" added to WBS.`);
-    setAddWbsOpen(false);
-    setWbsName("");
+    try {
+      await createWbsMutation.mutateAsync({
+        projectId: project.id,
+        data: {
+          code: wbsCode,
+          name: wbsName || "New Work Activity",
+          level: 2,
+          sequence: projWbs.length + 1,
+          plannedBudget: qty * rate,
+        }
+      });
+      notify(`Activity "${wbsName}" added to WBS.`);
+      setAddWbsOpen(false);
+      setWbsName("");
+    } catch (err) {
+      notify(`Failed to create WBS node`);
+    }
   };
 
-  const handleAddBoq = (e: React.FormEvent) => {
+  const handleAddBoq = async (e: React.FormEvent) => {
     e.preventDefault();
     const qty = parseFloat(boqQty) || 0;
     const rate = parseFloat(boqRate) || 0;
-    mockStore.addBoqItem({
-      projectId: project.id,
-      itemNumber: boqItemNo,
-      description: boqDesc || "Bill of Quantities Item",
-      unit: boqUnit,
-      quantity: qty,
-      rate,
-      amount: qty * rate,
-      wbsActivityCode: boqWbsCode || undefined,
-      executedQty: 0,
-    });
-    notify(`BOQ Item "${boqItemNo}" recorded successfully.`);
-    setAddBoqOpen(false);
-    setBoqDesc("");
+    try {
+      await createBoqMutation.mutateAsync({
+        projectId: project.id,
+        data: {
+          itemCode: boqItemNo,
+          description: boqDesc || "Bill of Quantities Item",
+          unit: boqUnit,
+          quantity: qty,
+          rate,
+          amount: qty * rate,
+        }
+      });
+      notify(`BOQ Item "${boqItemNo}" recorded successfully.`);
+      setAddBoqOpen(false);
+      setBoqDesc("");
+    } catch (err) {
+      notify("Failed to add BOQ Item");
+    }
   };
 
-  const handleAddMb = (e: React.FormEvent) => {
+  const handleAddMb = async (e: React.FormEvent) => {
     e.preventDefault();
     const l = parseFloat(mbLength) || 0;
     const b = parseFloat(mbBreadth) || 0;
@@ -328,35 +406,29 @@ function ProjectDetailPage() {
     if (mbType === "Length") calc = l * c;
     if (mbType === "Count" || mbType === "Custom") calc = c;
 
-    mockStore.addDigitalMb({
-      projectId: project.id,
-      projectName: project.name,
-      date: new Date().toISOString().slice(0, 10),
-      measurementType: mbType,
-      boqItemId: mbBoqId,
-      boqItemNumber: projBoq.find((b) => b.id === mbBoqId)?.itemNumber || "BOQ-GEN",
-      wbsActivityId: mbWbsId,
-      location: mbLocation || "Grid Line A1-D4",
-      description: mbDesc || "Site measurement entry",
-      dimensions: {
-        length: l,
-        breadth: b,
-        depth: d,
-        count: c,
-        customFactor: 1,
-      },
-      unit: mbUnit,
-      calculatedQty: calc,
-      previousQty: 0,
-      currentQty: calc,
-      cumulativeQty: calc,
-      verificationStatus: "pending",
-      notes: "Field measurement captured on site.",
-      attachments: [],
-    });
-    notify(`Measurement recorded: ${calc.toFixed(2)} ${mbUnit} submitted for verification.`);
-    setAddMbOpen(false);
-    setMbDesc("");
+    try {
+      await createMbMutation.mutateAsync({
+        projectId: project.id,
+        data: {
+          wbsNodeId: mbWbsId,
+          boqItemId: mbBoqId,
+          measurementType: mbType,
+          location: mbLocation || "Grid Line A1-D4",
+          description: mbDesc || "Site measurement entry",
+          length: l,
+          breadth: b,
+          depth: d,
+          count: c,
+          quantity: calc,
+          unit: mbUnit,
+        }
+      });
+      notify(`Measurement recorded: ${calc.toFixed(2)} ${mbUnit} submitted for verification.`);
+      setAddMbOpen(false);
+      setMbDesc("");
+    } catch (err) {
+      notify("Failed to add MB");
+    }
   };
 
   const handleAddPourCard = (e: React.FormEvent) => {
@@ -483,11 +555,32 @@ function ProjectDetailPage() {
             <HealthBadge health={project.health} />
             <Button
               size="sm"
-              onClick={() => notify(`Exported Project 360 Summary PDF for ${project.name}`)}
+              onClick={() => {
+                const headers = ["Project Attribute", "Value"];
+                const rows = [
+                  ["Project Code", project.code],
+                  ["Project Name", project.name],
+                  ["Client", project.client],
+                  ["Location", project.location],
+                  ["Total Contract Value (INR)", formatCurrency(project.budget)],
+                  ["Actual Cost Incurred (INR)", formatCurrency(project.actualCost)],
+                  ["Target Completion Date", project.targetCompletion],
+                  ["Physical Progress", `${project.progress}%`],
+                  ["Operational Health Status", project.health.toUpperCase()],
+                  ["Work Packages (WBS)", String(projWbs.length)],
+                  ["BOQ Line Items", String(projBoq.length)],
+                  ["Registered Drawings", String(projDrawings.length)],
+                  ["Filed Concrete Pour Cards", String(projPourCards.length)],
+                  ["Active Quality NCRs", String(projNcrs.length)],
+                  ["Safety Incidents / Observations", String(projSafetyIncidents.length + projSafetyWalks.length)],
+                ];
+                downloadCsv(`Project_360_Summary_${project.code}`, headers, rows);
+                notify(`Project 360° Summary report exported for ${project.name}.`);
+              }}
               variant="outline"
               className="gap-1.5 shadow-sm"
             >
-              <Download className="size-4" /> Export 360° Report
+              <Download className="size-4" /> Export 360° Report (CSV)
             </Button>
           </div>
         }
@@ -569,10 +662,10 @@ function ProjectDetailPage() {
             className="h-10 w-full rounded-xl border border-border/80 bg-card px-3 text-xs font-semibold text-foreground shadow-sm outline-none focus:ring-2 focus:ring-ring"
           >
             <option value="overview">🏢 Overview (Project Health)</option>
-            <option value="planning">📂 Planning & Engineering ({projWbs.length} WBS)</option>
-            {canViewDpr && <option value="progress">📋 Progress & DPR ({projDprs.length})</option>}
+            <option value="planning">📂 Planning & Tasks ({projWbs.length} Tasks)</option>
+            {canViewDpr && <option value="progress">📋 Daily Progress ({projDprs.length} DPRs)</option>}
             {canViewCommercial && <option value="commercial">💳 Commercial & Profitability</option>}
-            <option value="qa_safety">🛡️ QA/QC & Safety ({projNcrs.length} NCR)</option>
+            <option value="qa_safety">🛡️ Quality & Safety ({projNcrs.length} Defects)</option>
             <option value="materials">📦 Materials & Stores</option>
             <option value="people">👷 People & Manpower</option>
             <option value="equipment">🚜 Equipment ({projEquipment.length})</option>
@@ -594,7 +687,7 @@ function ProjectDetailPage() {
               value="planning"
               className="gap-1.5 py-1.5 px-3 text-xs rounded-lg font-medium"
             >
-              <Layers className="size-3.5" /> Planning & Engineering ({projWbs.length})
+              <Layers className="size-3.5" /> Planning & Tasks ({projWbs.length})
             </TabsTrigger>
             {canViewDpr && (
               <TabsTrigger
@@ -616,7 +709,7 @@ function ProjectDetailPage() {
               value="qa_safety"
               className="gap-1.5 py-1.5 px-3 text-xs rounded-lg font-medium"
             >
-              <ShieldCheck className="size-3.5" /> QA/QC & Safety ({projNcrs.length})
+              <ShieldCheck className="size-3.5" /> Quality & Safety ({projNcrs.length})
             </TabsTrigger>
             <TabsTrigger
               value="materials"
@@ -755,12 +848,12 @@ function ProjectDetailPage() {
             <div className="flex items-center gap-1.5 overflow-x-auto">
               {(
                 [
-                  { id: "wbs", label: `WBS Tree (${projWbs.length})` },
-                  { id: "gantt", label: "Gantt Schedule" },
-                  { id: "lookahead", label: "Look-ahead Board" },
-                  { id: "boq", label: `BOQ Register (${projBoq.length})` },
-                  { id: "dmb", label: `Digital MB (${projDmb.length})` },
-                  { id: "readiness", label: "Work Readiness" },
+                  { id: "wbs", label: `Phases & Tasks (${projWbs.length})` },
+                  { id: "gantt", label: "Timeline & Schedule" },
+                  { id: "lookahead", label: "Weekly Work Plan" },
+                  { id: "boq", label: `Cost Estimates / BOQ (${projBoq.length})` },
+                  { id: "dmb", label: `Measurement Book / MB (${projDmb.length})` },
+                  { id: "readiness", label: "Pre-Start Checklist" },
                   { id: "health", label: "Project Health" },
                 ] as const
               ).map((tab) => (
@@ -790,10 +883,10 @@ function ProjectDetailPage() {
                     }}
                     className="gap-1.5 shadow-sm text-xs"
                   >
-                    <Upload className="size-3.5" /> Import BOQ
+                    <Upload className="size-3.5" /> Import Estimates (BOQ)
                   </Button>
                   <Button size="sm" onClick={() => setAddBoqOpen(true)} className="gap-1.5 shadow-sm text-xs">
-                    <Plus className="size-3.5" /> Add BOQ Item
+                    <Plus className="size-3.5" /> Add Estimate Item
                   </Button>
                 </>
               )}
@@ -813,10 +906,10 @@ function ProjectDetailPage() {
                     }}
                     className="gap-1.5 shadow-sm text-xs"
                   >
-                    <Upload className="size-3.5" /> Import WBS
+                    <Upload className="size-3.5" /> Import Tasks (WBS)
                   </Button>
                   <Button size="sm" onClick={() => setAddWbsOpen(true)} className="gap-1.5 shadow-sm text-xs">
-                    <Plus className="size-3.5" /> Add WBS Activity
+                    <Plus className="size-3.5" /> Add Task / Activity
                   </Button>
                 </>
               )}
@@ -906,9 +999,9 @@ function ProjectDetailPage() {
             <div className="rounded-xl border bg-card p-5 shadow-panel space-y-4">
               <div className="flex items-center justify-between border-b pb-3">
                 <div>
-                  <h4 className="font-bold text-sm">Gantt Schedule & Predecessor Dependencies</h4>
+                  <h4 className="font-bold text-sm">Project Timeline & Schedule</h4>
                   <p className="text-xs text-muted-foreground">
-                    Critical path, FS/SS relationship lags, baseline vs actual timelines.
+                    Critical path, milestone relationships, baseline vs actual timelines.
                   </p>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -954,15 +1047,15 @@ function ProjectDetailPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="rounded-xl border bg-card p-4 shadow-panel space-y-3">
                   <h4 className="font-bold text-xs uppercase tracking-wider text-primary border-b pb-2 flex items-center justify-between">
-                    <span>2-Week Look-ahead Horizon</span>
+                    <span>Upcoming 2-Week Plan</span>
                     <span className="text-muted-foreground font-mono text-[10px]">Short-term Work Packages</span>
                   </h4>
                   <div className="space-y-2.5 text-xs">
                     {projWbs.slice(0, 3).map((act) => (
                       <div key={act.id} className="rounded-lg border bg-muted/20 p-3 space-y-1.5">
-                        <div className="flex justify-between font-semibold">
-                          <span>{act.code} · {act.name}</span>
-                          <span className="rounded bg-success/15 text-success px-1.5 py-0.5 text-[10px] font-bold">Ready</span>
+                        <div className="flex items-start justify-between gap-2.5 font-semibold">
+                          <span className="min-w-0 break-words leading-snug">{act.code} · {act.name}</span>
+                          <span className="rounded bg-success/15 text-success px-1.5 py-0.5 text-[10px] font-bold shrink-0 whitespace-nowrap">Ready</span>
                         </div>
                         <p className="text-[11px] text-muted-foreground">Assigned: {act.assignedGang} · Target: {act.plannedQty} {act.unit}</p>
                         <div className="flex items-center gap-2 text-[10px] text-muted-foreground pt-1">
@@ -975,19 +1068,19 @@ function ProjectDetailPage() {
 
                 <div className="rounded-xl border bg-card p-4 shadow-panel space-y-3">
                   <h4 className="font-bold text-xs uppercase tracking-wider text-muted-foreground border-b pb-2 flex items-center justify-between">
-                    <span>4-Week Look-ahead Horizon</span>
+                    <span>Upcoming 4-Week Plan</span>
                     <span className="text-muted-foreground font-mono text-[10px]">Medium-term Clearances</span>
                   </h4>
                   <div className="space-y-2.5 text-xs">
                     {projWbs.slice(2, 5).map((act) => (
                       <div key={act.id} className="rounded-lg border bg-muted/20 p-3 space-y-1.5">
-                        <div className="flex justify-between font-semibold">
-                          <span>{act.code} · {act.name}</span>
-                          <span className="rounded bg-warning/15 text-warning px-1.5 py-0.5 text-[10px] font-bold">Pre-Requisite Pending</span>
+                        <div className="flex items-start justify-between gap-2.5 font-semibold">
+                          <span className="min-w-0 break-words leading-snug">{act.code} · {act.name}</span>
+                          <span className="rounded bg-warning/15 text-warning px-1.5 py-0.5 text-[10px] font-bold shrink-0 whitespace-nowrap">Pre-Requisite Pending</span>
                         </div>
-                        <p className="text-[11px] text-muted-foreground">Responsible: Site Engineering Lead · Due: {act.startDate}</p>
+                        <p className="text-[11px] text-muted-foreground">Assigned: {act.assignedGang} · Target: {act.plannedQty} {act.unit}</p>
                         <div className="flex items-center gap-2 text-[10px] text-muted-foreground pt-1">
-                          <span>Procurement Indent: Required</span> · <span>Pour Card: Pending Signoff</span>
+                          <span>Materials: Indent Pending</span> · <span>Drawings: Verification Required</span>
                         </div>
                       </div>
                     ))}
@@ -1016,7 +1109,7 @@ function ProjectDetailPage() {
                   {projBoq.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
-                        No BOQ items registered. Click "Add BOQ Item" or "Import BOQ" to begin.
+                        No cost estimate items registered. Click "Add Estimate Item" or "Import Estimates (BOQ)" to begin.
                       </td>
                     </tr>
                   ) : (
@@ -1211,7 +1304,7 @@ function ProjectDetailPage() {
                         : "text-muted-foreground hover:bg-muted"
                     }`}
                   >
-                    {tab === "dpr" ? `Daily DPR Logs (${projDprs.length})` : tab === "weekly" ? "Weekly S-Curve" : tab === "physical" ? "Physical Progress" : "Delay / Variance"}
+                    {tab === "dpr" ? `Daily DPR Logs (${projDprs.length})` : tab === "weekly" ? "Progress Curve (S-Curve)" : tab === "physical" ? "Physical Progress" : "Delay / Variance"}
                   </button>
                 ))}
               </div>
@@ -1335,18 +1428,18 @@ function ProjectDetailPage() {
 
             {commercialSubTab === "eac" && (
               <div className="rounded-xl border bg-card p-5 shadow-panel space-y-4">
-                <h4 className="font-bold text-sm border-b pb-2">Estimate at Completion (EAC) Earned Value Analysis</h4>
+                <h4 className="font-bold text-sm border-b pb-2">Cost & Budget Forecast at Completion (EAC)</h4>
                 <div className="grid gap-4 sm:grid-cols-3 text-xs">
                   <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
-                    <span className="text-muted-foreground">Budget at Completion (BAC)</span>
+                    <span className="text-muted-foreground">Approved Budget (BAC)</span>
                     <p className="font-mono text-base font-bold text-foreground">{formatCurrency(eacData.budgetAtCompletion)}</p>
                   </div>
                   <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
-                    <span className="text-muted-foreground">Estimate at Completion (EAC)</span>
+                    <span className="text-muted-foreground">Projected Final Cost (EAC)</span>
                     <p className="font-mono text-base font-bold text-foreground">{formatCurrency(eacData.estimateAtCompletion)}</p>
                   </div>
                   <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
-                    <span className="text-muted-foreground">Variance at Completion (VAC)</span>
+                    <span className="text-muted-foreground">Projected Cost Variance (VAC)</span>
                     <p className={`font-mono text-base font-bold ${eacData.varianceAtCompletion < 0 ? "text-danger" : "text-success"}`}>
                       {formatCurrency(eacData.varianceAtCompletion)}
                     </p>
@@ -1427,10 +1520,10 @@ function ProjectDetailPage() {
             <div className="flex items-center gap-1.5 overflow-x-auto">
               {(
                 [
-                  { id: "pour_cards", label: `Pour Cards (${projPourCards.length})` },
-                  { id: "ncrs", label: `NCRs (${projNcrs.length})` },
-                  { id: "safety_walks", label: `Safety Walks (${projSafetyWalks.length})` },
-                  { id: "incidents", label: `Incidents (${projSafetyIncidents.length})` },
+                  { id: "pour_cards", label: `Pour Checklists (${projPourCards.length})` },
+                  { id: "ncrs", label: `Quality Defects / NCR (${projNcrs.length})` },
+                  { id: "safety_walks", label: `Safety Inspections (${projSafetyWalks.length})` },
+                  { id: "incidents", label: `Safety Incidents (${projSafetyIncidents.length})` },
                 ] as const
               ).map((tab) => (
                 <button
@@ -1455,7 +1548,7 @@ function ProjectDetailPage() {
               )}
               {qaSafetySubTab === "ncrs" && (
                 <Button size="sm" onClick={() => setAddNcrOpen(true)} className="gap-1.5 shadow-sm text-xs">
-                  <Plus className="size-3.5" /> Raise NCR
+                  <Plus className="size-3.5" /> Report Quality Defect (NCR)
                 </Button>
               )}
             </div>
@@ -1490,7 +1583,7 @@ function ProjectDetailPage() {
                         <td className="px-4 py-3 text-success font-semibold">5/5 Inspections Signed Off</td>
                         <td className="px-4 py-3"><WorkflowBadge status={pc.status} /></td>
                         <td className="px-4 py-3">
-                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => notify(`Pour Card ${pc.pourNumber} opened for inspection.`)}>
+                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setSelectedPourCard(pc)}>
                             Inspect
                           </Button>
                         </td>
@@ -1904,7 +1997,7 @@ function ProjectDetailPage() {
                         </td>
                         <td className="px-4 py-3 font-mono">{drw.issueDate}</td>
                         <td className="px-4 py-3">
-                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => notify(`Viewing drawing ${drw.drawingNumber}`)}>
+                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setSelectedDrawing(drw)}>
                             <Eye className="size-3.5 mr-1" /> View Sheet
                           </Button>
                         </td>
@@ -2023,7 +2116,7 @@ function ProjectDetailPage() {
       <Dialog open={addWbsOpen} onOpenChange={setAddWbsOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-base">Add Work Breakdown Structure (WBS) Activity</DialogTitle>
+            <DialogTitle className="text-base">Add Phase / Work Activity (WBS)</DialogTitle>
             <DialogDescription className="text-xs">
               Define planned quantities, unit rate, and assigned subcontractor gang.
             </DialogDescription>
@@ -2122,7 +2215,7 @@ function ProjectDetailPage() {
 
             <FormActions
               onCancel={() => setAddWbsOpen(false)}
-              submitLabel="Add WBS Activity"
+              submitLabel="Add Work Activity"
             />
           </form>
         </DialogContent>
@@ -2210,7 +2303,7 @@ function ProjectDetailPage() {
       <Dialog open={addMbOpen} onOpenChange={setAddMbOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-base">Record Digital Measurement Entry</DialogTitle>
+            <DialogTitle className="text-base">Record Measurement Book (MB) Entry</DialogTitle>
             <DialogDescription className="text-xs">
               Enter field dimensions for automated calculation and site engineer verification.
             </DialogDescription>
@@ -2410,7 +2503,7 @@ function ProjectDetailPage() {
       <Dialog open={addNcrOpen} onOpenChange={setAddNcrOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-base">Raise Quality Non-Conformance Report (NCR)</DialogTitle>
+            <DialogTitle className="text-base">Report Quality Defect / Issue (NCR)</DialogTitle>
             <DialogDescription className="text-xs">
               Log quality defect, severity, and assign corrective & preventive actions (CAPA).
             </DialogDescription>
@@ -2479,7 +2572,7 @@ function ProjectDetailPage() {
 
             <FormActions
               onCancel={() => setAddNcrOpen(false)}
-              submitLabel="Register NCR"
+              submitLabel="Report Defect (NCR)"
             />
           </form>
         </DialogContent>
@@ -2716,6 +2809,152 @@ function ProjectDetailPage() {
         isOpen={!!selectedDoc}
         onClose={() => setSelectedDoc(null)}
       />
+
+      {/* Pour Card Inspect Modal */}
+      {selectedPourCard && (
+        <Dialog open={Boolean(selectedPourCard)} onOpenChange={(open) => !open && setSelectedPourCard(null)}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+                <WorkflowBadge status={selectedPourCard.status} />
+                <span className="font-mono">{selectedPourCard.pourNumber}</span>
+              </div>
+              <DialogTitle className="text-base font-bold">Concrete Pour Card Inspection & Signoff</DialogTitle>
+              <DialogDescription className="text-xs">
+                {project.name} · {selectedPourCard.location} ({selectedPourCard.element})
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2 text-xs">
+              <div className="grid grid-cols-2 gap-3 p-3 rounded-lg border bg-muted/20">
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">Grade of Concrete</span>
+                  <span className="font-bold text-foreground text-sm">{selectedPourCard.gradeOfConcrete}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">Planned Quantity</span>
+                  <span className="font-bold text-foreground text-sm">{selectedPourCard.plannedQuantityCum} cum</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-bold text-foreground">Pre-Pour Mandatory Quality Checkpoints</h4>
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between p-2 rounded border bg-card">
+                    <span>1. Rebar diameter, spacing & lap lengths per GFC drawing</span>
+                    <span className="text-emerald-600 font-bold text-[10px] flex items-center gap-1">
+                      <CheckCircle2 className="size-3.5" /> VERIFIED
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded border bg-card">
+                    <span>2. Formwork alignment, plumb & shuttering tape seal</span>
+                    <span className="text-emerald-600 font-bold text-[10px] flex items-center gap-1">
+                      <CheckCircle2 className="size-3.5" /> VERIFIED
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded border bg-card">
+                    <span>3. Cover blocks (40mm/50mm) and chair supports fixed</span>
+                    <span className="text-emerald-600 font-bold text-[10px] flex items-center gap-1">
+                      <CheckCircle2 className="size-3.5" /> VERIFIED
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded border bg-card">
+                    <span>4. Slump cone test (120mm ± 25mm) & cube sampling kit</span>
+                    <span className="text-emerald-600 font-bold text-[10px] flex items-center gap-1">
+                      <CheckCircle2 className="size-3.5" /> VERIFIED
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded border bg-card">
+                    <span>5. Needle vibrators & standby backup operational on deck</span>
+                    <span className="text-emerald-600 font-bold text-[10px] flex items-center gap-1">
+                      <CheckCircle2 className="size-3.5" /> VERIFIED
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-2.5 rounded-lg border bg-muted/40 text-[11px]">
+                <span className="text-muted-foreground">Certified Inspection Signature:</span>
+                <span className="font-semibold text-foreground">Resident Site QA Engineer (IS 456 Compliant)</span>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button size="sm" variant="outline" onClick={() => setSelectedPourCard(null)}>
+                  Close
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    notify(`Pour Card ${selectedPourCard.pourNumber} certified and signed off.`);
+                    setSelectedPourCard(null);
+                  }}
+                >
+                  Confirm QA Sign-off
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Drawing Viewer Modal */}
+      {selectedDrawing && (
+        <Dialog open={Boolean(selectedDrawing)} onOpenChange={(open) => !open && setSelectedDrawing(null)}>
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+                <span className="font-mono">{selectedDrawing.drawingNumber}</span>
+                <span>·</span>
+                <span>{selectedDrawing.discipline}</span>
+              </div>
+              <DialogTitle className="text-base font-bold">{selectedDrawing.title}</DialogTitle>
+              <DialogDescription className="text-xs">
+                {project.name} · Current Revision: {selectedDrawing.currentRevision} (Issued: {selectedDrawing.issueDate})
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2 text-xs">
+              <div className="rounded-lg border bg-muted/30 p-8 text-center space-y-3">
+                <div className="grid size-14 place-items-center rounded-full bg-primary/10 text-primary mx-auto">
+                  <FileText className="size-7" />
+                </div>
+                <div>
+                  <p className="font-bold text-foreground text-sm">{selectedDrawing.drawingNumber}.pdf</p>
+                  <p className="text-muted-foreground text-[11px] mt-0.5">Discipline: {selectedDrawing.discipline} · Revision: {selectedDrawing.currentRevision}</p>
+                </div>
+                <Button
+                  size="sm"
+                  className="gap-2 shadow-sm"
+                  onClick={() => {
+                    const headers = ["Drawing #", "Title", "Discipline", "Revision", "Issue Date", "Status"];
+                    const rows = [[selectedDrawing.drawingNumber, selectedDrawing.title, selectedDrawing.discipline, selectedDrawing.currentRevision, selectedDrawing.issueDate, selectedDrawing.status]];
+                    downloadCsv(`Drawing_Metadata_${selectedDrawing.drawingNumber}`, headers, rows);
+                    notify(`Drawing metadata downloaded for ${selectedDrawing.drawingNumber}.`);
+                  }}
+                >
+                  <Download className="size-4" /> Download Drawing Package (CSV)
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 p-3 rounded-lg border bg-card">
+                <div>
+                  <span className="text-muted-foreground block text-[10px]">Release Status</span>
+                  <span className="font-bold text-emerald-600">{selectedDrawing.status.toUpperCase()} FOR CONSTRUCTION</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[10px]">Approval Authority</span>
+                  <span className="font-bold text-foreground">Chief Structural Consultant</span>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <Button size="sm" variant="outline" onClick={() => setSelectedDrawing(null)}>
+                  Close Viewer
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </AppShell>
   );
 }
+

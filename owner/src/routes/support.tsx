@@ -139,11 +139,11 @@ export function SupportView() {
               className="rounded-xl border border-border/80 bg-card p-4 shadow-panel flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-primary/40 transition-colors"
             >
               <div className="space-y-1.5">
-                <div className="flex items-center gap-2.5">
-                  <span className="font-mono text-[11px] font-bold text-muted-foreground">{ticket.ticketNumber}</span>
+                <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+                  <span className="font-mono text-[11px] font-bold text-muted-foreground shrink-0">{ticket.ticketNumber}</span>
                   <StatusBadge status={ticket.priority} />
                   <StatusBadge status={ticket.status} />
-                  <span className="text-xs font-semibold text-foreground">{ticket.tenantName}</span>
+                  <span className="text-xs font-semibold text-foreground truncate max-w-[180px] sm:max-w-none">{ticket.tenantName}</span>
                 </div>
                 <h3 className="text-sm font-bold text-foreground">{ticket.title}</h3>
                 <p className="text-xs text-muted-foreground">

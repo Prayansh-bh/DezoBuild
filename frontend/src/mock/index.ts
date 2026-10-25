@@ -315,6 +315,14 @@ export const mockStore = {
     return newIndent;
   },
 
+  updateIndentStatus(id: string, status: Indent["status"]) {
+    state = {
+      ...state,
+      indents: state.indents.map((ind) => (ind.id === id ? { ...ind, status } : ind)),
+    };
+    emitChange();
+  },
+
   addPurchaseOrder(po: Omit<PurchaseOrder, "id" | "poNumber">): PurchaseOrder {
     const newPO: PurchaseOrder = {
       ...po,

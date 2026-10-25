@@ -19,13 +19,16 @@
     "preview": "npm run preview --workspace=frontend",
     "lint": "eslint frontend/src backend/src",
     "format": "prettier --write frontend owner backend README.md package.json",
-    "test": "npm run test --workspace=backend"
+    "typecheck": "npm run typecheck --workspace=backend",
+    "test": "npm run test --workspace=backend",
+    "prisma:generate": "prisma generate --schema=backend/src/database/schema.prisma"
   },
   "overrides": {
     "rolldown": "1.2.1"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
+    "@prisma/client": "^6.4.1",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-aspect-ratio": "^1.1.8",
@@ -64,6 +67,7 @@
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.575.0",
+    "prisma": "^6.4.1",
     "react": "^19.2.0",
     "react-day-picker": "^9.14.0",
     "react-dom": "^19.2.0",

@@ -1,10 +1,15 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useState, useRef, useMemo, type ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
+  AlertCircle,
+  AlertTriangle,
   Bell,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   HardHat,
+  Info,
+  LogOut,
   Menu,
   Plus,
   Search,
@@ -12,18 +17,12 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { CommandSearchDialog } from "@/components/command-search";
 import { QuickAddDialog } from "@/components/quick-add-dialog";
 import { ThemeToggle } from "./theme-toggle";
 import { useMockStore } from "@/mock";
 import { useCurrentUser } from "@/auth";
+import { useWorkspaceModules } from "@/hooks/api/useWorkspaceModules";
 import {
   CustomerRole,
   ROLE_DEFINITIONS,
@@ -39,7 +38,39 @@ export const navigation = Object.values(CANONICAL_NAV_ITEMS).filter(
 );
 export const settingsNav = CANONICAL_NAV_ITEMS.ADMINISTRATION;
 
-const NotifyContext = createContext<(message: string) => void>(() => {});
+export type QuickActionType =
+  | "expense"
+  | "receipt"
+  | "issue"
+  | "attendance"
+  | "progress"
+  | "payment";
+
+type QuickAddContextType = {
+  openQuickAdd: (type?: QuickActionType) => void;
+  closeQuickAdd: () => void;
+};
+
+const QuickAddContext = createContext<QuickAddContextType>({
+  openQuickAdd: () => {},
+  closeQuickAdd: () => {},
+});
+export const useQuickAdd = () => useContext(QuickAddContext);
+
+export type ToastType = "success" | "error" | "warning" | "info";
+export type ToastData = {
+  id: number;
+  message: string;
+  title?: string | undefined;
+  type: ToastType;
+};
+
+export type NotifyFn = (
+  messageOrOptions: string | { message: string; title?: string; type?: ToastType },
+  type?: ToastType
+) => void;
+
+const NotifyContext = createContext<NotifyFn>(() => {});
 export const useNotify = () => useContext(NotifyContext);
 
 export function Brand({ compact = false }: { compact?: boolean }) {
@@ -66,27 +97,78 @@ export function Brand({ compact = false }: { compact?: boolean }) {
 
 export function AppShell({ children, crumb }: { children: ReactNode; crumb: string }) {
   const { alerts } = useMockStore();
-  const { user, availableUsers, switchUser, switchRole } = useCurrentUser();
+  const { user, logout } = useCurrentUser();
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickAddInitialType, setQuickAddInitialType] = useState<QuickActionType>("expense");
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
-  const [roleSwitcherOpen, setRoleSwitcherOpen] = useState(false);
-  const [toast, setToast] = useState("");
+  const [toast, setToast] = useState<ToastData | null>(null);
+  const toastTimeoutRef = useRef<number | null>(null);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
-  const notify = useCallback((message: string) => {
-    setToast(message);
-    window.setTimeout(() => setToast(""), 2800);
+  const openQuickAdd = useCallback((type?: QuickActionType) => {
+    if (type) setQuickAddInitialType(type);
+    setQuickAddOpen(true);
+  }, []);
+
+  const closeQuickAdd = useCallback(() => {
+    setQuickAddOpen(false);
+  }, []);
+
+  const notify = useCallback<NotifyFn>((messageOrOptions, explicitType) => {
+    if (toastTimeoutRef.current) {
+      window.clearTimeout(toastTimeoutRef.current);
+    }
+
+    let message = "";
+    let title: string | undefined;
+    let type: ToastType = "info";
+
+    if (typeof messageOrOptions === "string") {
+      message = messageOrOptions;
+      type = explicitType || (message.toLowerCase().includes("fail") || message.toLowerCase().includes("error") || message.toLowerCase().includes("forbidden") ? "error" : "success");
+    } else if (messageOrOptions && typeof messageOrOptions === "object") {
+      message = messageOrOptions.message || "";
+      title = messageOrOptions.title;
+      type = messageOrOptions.type || explicitType || "info";
+    }
+
+    const toastItem: ToastData = {
+      id: Date.now(),
+      message,
+      title,
+      type,
+    };
+
+    setToast(toastItem);
+
+    const duration = type === "error" ? 6000 : type === "warning" ? 5000 : 3500;
+    toastTimeoutRef.current = window.setTimeout(() => {
+      setToast(null);
+    }, duration);
   }, []);
 
   const openAlertsCount = alerts.filter((a) => a.status === "open").length;
 
-  // Resolve dynamic role-aware navigation
+  // Server-authoritative workspace module hydration
+  const { data: workspaceModules } = useWorkspaceModules();
+
+  const effectiveFeatures = useMemo(() => {
+    if (!workspaceModules) return undefined;
+    const map: Record<string, boolean> = {};
+    for (const m of workspaceModules) {
+      map[m.featureKey] = m.effectiveActive;
+    }
+    return map;
+  }, [workspaceModules]);
+
+  // Resolve dynamic role-aware navigation combining RBAC and effective feature activation
   const { primaryItems, settingsItem } = resolveNavigation({
     role: user.role,
     permissions: user.customPermissions,
     tenantId: user.tenant.id,
     projectAssignments: user.assignedProjects.map((p) => p.projectId),
+    effectiveFeatures,
   });
 
   const currentRoleMeta = ROLE_DEFINITIONS[user.role] || ROLE_DEFINITIONS[CustomerRole.COMPANY_OWNER];
@@ -178,22 +260,34 @@ export function AppShell({ children, crumb }: { children: ReactNode; crumb: stri
               </Link>
             )}
 
-            {/* Interactive User Card with Role Switch Trigger */}
-            <div
-              onClick={() => setRoleSwitcherOpen(true)}
-              className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-sidebar-accent cursor-pointer transition-colors border border-transparent hover:border-sidebar-border"
-              title="Click to switch role or view mock identity"
-            >
-              <div className="grid size-8 place-items-center rounded-full bg-primary/15 border border-primary/25 font-bold text-primary text-xs shrink-0">
-                {user.avatarInitials}
+            {/* User Profile Card & Sign out */}
+            <div className="flex items-center justify-between gap-1.5 p-1.5 rounded-lg border border-sidebar-border bg-sidebar-accent/30">
+              <div
+                className="flex items-center gap-2.5 min-w-0 flex-1 p-1 rounded-md"
+                title={user.email}
+              >
+                <div className="grid size-8 place-items-center rounded-full bg-primary/15 border border-primary/25 font-bold text-primary text-xs shrink-0">
+                  {user.avatarInitials}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-semibold text-sidebar-foreground">
+                    {user.name}
+                  </p>
+                  <p className="truncate text-[10px] text-sidebar-muted">{user.title}</p>
+                </div>
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-semibold text-sidebar-foreground">
-                  {user.name}
-                </p>
-                <p className="truncate text-[10px] text-sidebar-muted">{user.title}</p>
-              </div>
-              <ChevronRight className="size-3.5 text-sidebar-muted shrink-0" />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={async () => {
+                  await logout();
+                }}
+                className="size-8 text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent shrink-0 cursor-pointer"
+                title="Sign out of DEZOBUILD"
+                aria-label="Sign out"
+              >
+                <LogOut className="size-4" />
+              </Button>
             </div>
           </div>
         </aside>
@@ -223,24 +317,31 @@ export function AppShell({ children, crumb }: { children: ReactNode; crumb: stri
                 </div>
               </div>
 
-              {/* Mobile Role Switch Button */}
+              {/* Mobile User Card & Role Info */}
               <div className="mt-4 rounded-lg border border-sidebar-border bg-sidebar-accent/50 p-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-bold uppercase text-sidebar-muted">
                     {user.tenant.name}
                   </span>
-                  <button
-                    onClick={() => {
-                      setMobileMenu(false);
-                      setRoleSwitcherOpen(true);
-                    }}
+                  <span
                     className={`rounded border px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${currentRoleMeta.badgeClass}`}
                   >
-                    {currentRoleMeta.shortLabel} ↻
-                  </button>
+                    {currentRoleMeta.shortLabel}
+                  </span>
                 </div>
                 <p className="mt-1 text-xs font-semibold text-sidebar-foreground">{user.name}</p>
                 <p className="text-[10px] text-sidebar-muted">{user.title}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    setMobileMenu(false);
+                    await logout();
+                  }}
+                  className="mt-2.5 w-full h-8 text-xs gap-1.5 font-medium cursor-pointer"
+                >
+                  <LogOut className="size-3.5" /> Sign out
+                </Button>
               </div>
 
               <nav className="mt-4 space-y-1">
@@ -309,15 +410,13 @@ export function AppShell({ children, crumb }: { children: ReactNode; crumb: stri
 
             <div className="ml-auto flex items-center gap-2 sm:gap-3">
               {/* Active Role Indicator Pill */}
-              <button
-                onClick={() => setRoleSwitcherOpen(true)}
-                className={`hidden md:inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors hover:opacity-80 ${currentRoleMeta.badgeClass}`}
-                title="Active Customer Role (Click to switch)"
+              <div
+                className={`hidden md:inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold ${currentRoleMeta.badgeClass}`}
+                title={`Active Role: ${currentRoleMeta.title}`}
               >
                 <UserCheck className="size-3.5" />
                 <span>{currentRoleMeta.shortLabel}</span>
-                <ChevronDown className="size-3 opacity-60" />
-              </button>
+              </div>
 
               <button
                 onClick={() => setSearchOpen(true)}
@@ -337,25 +436,12 @@ export function AppShell({ children, crumb }: { children: ReactNode; crumb: stri
               >
                 <Plus className="size-3.5" /> Quick Add
               </Button>
-
               <ThemeToggle />
-
-              <Link
-                to={"/alerts" as any}
-                aria-label="Notifications"
-                className="relative grid size-8.5 place-items-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <Bell className="size-4" />
-                {openAlertsCount > 0 && (
-                  <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-rose-500 ring-2 ring-card" />
-                )}
-              </Link>
             </div>
           </header>
 
-          <main className="mx-auto max-w-[1560px] px-4 pb-24 pt-6 sm:px-6 lg:px-8 lg:pb-12 lg:pt-8">
-            {children}
-          </main>
+          {/* Main View Port */}
+          <main className="min-h-[calc(100vh-3.75rem)] p-4 sm:p-6 lg:p-8">{children}</main>
         </div>
 
         {/* Mobile Bottom Navigation Bar */}
@@ -430,100 +516,62 @@ export function AppShell({ children, crumb }: { children: ReactNode; crumb: stri
           })}
         </nav>
 
-        {/* Development Role & Persona Switcher Modal */}
-        <Dialog open={roleSwitcherOpen} onOpenChange={setRoleSwitcherOpen}>
-          <DialogContent className="max-w-xl">
-            <DialogHeader>
-              <div className="flex items-center justify-between">
-                <DialogTitle className="flex items-center gap-2 text-base font-bold">
-                  <UserCheck className="size-5 text-primary" />
-                  Development Persona Preview (QA Tool)
-                </DialogTitle>
-                <span className="rounded bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide">
-                  QA / Simulation Only
-                </span>
-              </div>
-              <DialogDescription className="text-xs">
-                Switch authenticated customer persona to simulate role-based navigation, scoped data,
-                and progressive disclosure across DEZOBUILD. Production authentication will automatically
-                hydrate this identity from your enterprise SSO / tenant provider.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="mt-2 space-y-2 max-h-[440px] overflow-y-auto pr-1">
-              {availableUsers.map((mockUser) => {
-                const roleMeta = ROLE_DEFINITIONS[mockUser.role];
-                const isSelected = user.id === mockUser.id;
-                return (
-                  <div
-                    key={mockUser.id}
-                    onClick={() => {
-                      switchUser(mockUser.id);
-                      notify(`Switched workspace to ${roleMeta.title} (${mockUser.name})`);
-                      setRoleSwitcherOpen(false);
-                    }}
-                    className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-all ${
-                      isSelected
-                        ? "border-primary bg-primary/5 shadow-xs"
-                        : "border-border hover:border-border/80 hover:bg-muted/40"
-                    }`}
-                  >
-                    <div className="grid size-9 place-items-center rounded-full bg-primary/10 border border-primary/20 font-bold text-primary text-xs shrink-0 mt-0.5">
-                      {mockUser.avatarInitials}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold text-foreground">{mockUser.name}</p>
-                        <span
-                          className={`rounded border px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${roleMeta.badgeClass}`}
-                        >
-                          {roleMeta.shortLabel}
-                        </span>
-                        {isSelected && (
-                          <span className="ml-auto text-[10px] font-bold text-primary">Active</span>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5 font-medium">
-                        {mockUser.title} · {mockUser.department}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
-                        {roleMeta.description}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="mt-2 border-t pt-2 text-[11px] text-muted-foreground flex items-center justify-between">
-              <span>Platform Owner (SUPER_ADMIN) is scoped to <strong className="text-foreground">owner.dezobuild.com</strong></span>
-              <span className="font-semibold text-primary">app.dezobuild.com</span>
-            </div>
-          </DialogContent>
-        </Dialog>
-
         {/* Interactive Modals */}
-        <QuickAddDialog isOpen={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
-        <CommandSearchDialog isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
+        <QuickAddContext.Provider value={{ openQuickAdd, closeQuickAdd }}>
+          <QuickAddDialog
+            isOpen={quickAddOpen}
+            onClose={closeQuickAdd}
+            initialType={quickAddInitialType}
+          />
+          <CommandSearchDialog isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
 
-        {/* Toast notifications */}
-        {toast && (
-          <div
-            role="status"
-            className="fixed left-1/2 top-20 z-[70] -translate-x-1/2 rounded-md bg-foreground px-4 py-2.5 text-sm font-medium text-background shadow-float"
-          >
-            {toast}
-          </div>
-        )}
+          {/* Rich Toast Notifications */}
+          {toast && (
+            <div
+              role="alert"
+              aria-live="assertive"
+              className={`fixed top-5 right-5 z-[9999] flex max-w-md items-start gap-3 rounded-xl border p-4 shadow-2xl backdrop-blur-md transition-all duration-300 animate-in fade-in slide-in-from-top-4 ${
+                toast.type === "error"
+                  ? "border-destructive/40 bg-destructive/95 text-destructive-foreground"
+                  : toast.type === "warning"
+                    ? "border-amber-500/40 bg-amber-950/95 text-amber-100 dark:bg-amber-950/95"
+                    : toast.type === "success"
+                      ? "border-emerald-500/40 bg-emerald-950/95 text-emerald-100 dark:bg-emerald-950/95"
+                      : "border-primary/40 bg-slate-900/95 text-slate-100 dark:bg-slate-900/95"
+              }`}
+            >
+              <div className="mt-0.5 shrink-0">
+                {toast.type === "error" && <AlertCircle className="size-5 text-destructive-foreground" />}
+                {toast.type === "warning" && <AlertTriangle className="size-5 text-amber-400" />}
+                {toast.type === "success" && <CheckCircle2 className="size-5 text-emerald-400" />}
+                {toast.type === "info" && <Info className="size-5 text-sky-400" />}
+              </div>
+              <div className="min-w-0 flex-1 space-y-0.5">
+                {toast.title && (
+                  <p className="text-xs font-bold uppercase tracking-wider opacity-90">{toast.title}</p>
+                )}
+                <p className="text-xs font-medium leading-relaxed break-words">{toast.message}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setToast(null)}
+                className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-md text-inherit opacity-70 transition-opacity hover:opacity-100 cursor-pointer"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          )}
+        </QuickAddContext.Provider>
       </div>
     </NotifyContext.Provider>
   );
 }
 
 export function QuickAddButton() {
-  const notify = useNotify();
+  const { openQuickAdd } = useQuickAdd();
   return (
-    <Button onClick={() => notify("Quick add dialog ready")}>
-      <Plus /> Quick add
+    <Button onClick={() => openQuickAdd("expense")} className="gap-1.5 cursor-pointer shadow-sm">
+      <Plus className="size-4" /> Quick add
     </Button>
   );
 }

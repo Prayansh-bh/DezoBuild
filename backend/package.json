@@ -5,20 +5,28 @@
   "description": "DEZOBUILD Construction Operating System - Backend Architecture & API Service",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc",
+    "build": "prisma generate --schema=src/database/schema.prisma && tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "dev": "tsx watch src/main.ts",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/**/*.test.ts"
+    "test": "node --import tsx --test --test-concurrency=1 \"tests/**/*.test.ts\" \"tests/*.test.ts\"",
+    "prisma:generate": "prisma generate --schema=src/database/schema.prisma"
   },
   "dependencies": {
+    "@prisma/client": "^6.4.1",
+    "bcrypt": "^6.0.0",
     "dotenv": "^16.4.7",
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
     "@types/node": "^22.16.5",
+    "prisma": "^6.4.1",
     "tsx": "^4.19.2",
     "typescript": "^5.8.3"
+  },
+  "prisma": {
+    "schema": "src/database/schema.prisma"
   }
 }

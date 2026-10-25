@@ -32,7 +32,7 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import { AppShell, useNotify } from "@/components/app-shell";
+import { AppShell, useNotify, useQuickAdd } from "@/components/app-shell";
 import { HealthBadge, StatusPill, WorkflowBadge } from "@/components/shared/status-badge";
 import { StatGrid } from "@/components/shared/stat-grid";
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,7 @@ import { formatCurrency, mockStore, useMockStore, useContextualData } from "@/mo
 import type { SmartAlert } from "@/mock/types";
 import { useCurrentUser } from "@/auth";
 import { CustomerRole, getWorkspaceConfig } from "@/authorization";
+import { useResolveAlert, useApproveExpense, useRecordPunch } from "@/hooks/api";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -69,6 +70,7 @@ function DashboardPage() {
   const workspaceConfig = getWorkspaceConfig(user.role);
   const notify = useNotify();
   const navigate = useNavigate();
+  const resolveAlertMutation = useResolveAlert();
 
   const [period, setPeriod] = useState("This month");
   const [selectedAlert, setSelectedAlert] = useState<SmartAlert | null>(null);
@@ -228,9 +230,18 @@ function DashboardPage() {
                 <Button
                   size="sm"
                   onClick={() => {
-                    mockStore.resolveAlert(selectedAlert.id);
-                    notify(`Alert "${selectedAlert.title}" marked as resolved.`);
-                    setSelectedAlert(null);
+                    resolveAlertMutation.mutate(
+                      { id: selectedAlert.id },
+                      {
+                        onSuccess: () => {
+                          notify(`Alert "${selectedAlert.title}" marked as resolved.`);
+                          setSelectedAlert(null);
+                        },
+                        onError: (err: any) => {
+                          notify(err.message || "Failed to resolve alert.");
+                        },
+                      }
+                    );
                   }}
                 >
                   Resolve Alert
@@ -263,14 +274,14 @@ function ExecutivePortfolioDashboard({
   period: string;
 }) {
   const navigate = useNavigate();
-  const totalApprovedBudget = projects.reduce((acc, p) => acc + p.budget, 0);
-  const totalActualCost = projects.reduce((acc, p) => acc + p.actualCost, 0);
-  const totalWorkers = projects.reduce((acc, p) => acc + p.activeWorkersToday, 0);
-  const lowStockCount = materials.filter((m) => m.currentStock <= m.reorderLevel).length;
+  const totalApprovedBudget = (projects || []).reduce((acc, p) => acc + (p?.budget || 0), 0);
+  const totalActualCost = (projects || []).reduce((acc, p) => acc + (p?.actualCost || 0), 0);
+  const totalWorkers = (projects || []).reduce((acc, p) => acc + (p?.activeWorkersToday || 0), 0);
+  const lowStockCount = (materials || []).filter((m) => (m?.currentStock ?? 0) <= (m?.reorderLevel ?? 0)).length;
 
-  const criticalProjects = projects.filter((p) => p.health === "critical");
-  const attentionProjects = projects.filter((p) => p.health === "attention");
-  const healthyProjects = projects.filter((p) => p.health === "healthy");
+  const criticalProjects = (projects || []).filter((p) => p?.health === "critical");
+  const attentionProjects = (projects || []).filter((p) => p?.health === "attention");
+  const healthyProjects = (projects || []).filter((p) => p?.health === "healthy");
 
   return (
     <div className="space-y-8">
@@ -613,6 +624,7 @@ function SiteEngineerDashboard({
   openAlerts: SmartAlert[];
   notify: (msg: string) => void;
 }) {
+  const { openQuickAdd } = useQuickAdd();
   const activeProj = projects[0];
   return (
     <div className="space-y-6">
@@ -661,16 +673,16 @@ function SiteEngineerDashboard({
           <div className="grid grid-cols-2 gap-2 text-xs pt-1">
             <Button
               size="sm"
-              onClick={() => notify("DPR Submission wizard initiated for active site.")}
-              className="gap-1.5"
+              onClick={() => openQuickAdd("progress")}
+              className="gap-1.5 cursor-pointer shadow-sm"
             >
               <Plus className="size-3.5" /> Submit Daily DPR
             </Button>
             <Button
               size="sm"
               variant="outline"
-              onClick={() => notify("Material Indent form opened.")}
-              className="gap-1.5"
+              onClick={() => openQuickAdd("receipt")}
+              className="gap-1.5 cursor-pointer"
             >
               <Boxes className="size-3.5" /> Site Indent
             </Button>
@@ -783,8 +795,10 @@ function ProcurementStoreDashboard({
                     <p className="font-bold text-foreground">{m.name} ({m.code})</p>
                     <p className="text-[10px] text-muted-foreground">Current: {m.currentStock} {m.unit} (Reorder at: {m.reorderLevel})</p>
                   </div>
-                  <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => notify(`PO drafting initiated for ${m.name}`)}>
-                    Create PO
+                  <Button size="sm" variant="outline" asChild className="h-7 text-[11px] cursor-pointer">
+                    <Link to={"/materials" as any}>
+                      Create PO
+                    </Link>
                   </Button>
                 </div>
               ))}
@@ -853,6 +867,21 @@ function AccountantDashboard({
   const totalActual = projects.reduce((acc, p) => acc + p.actualCost, 0);
   const pendingExpenses = expenses.filter((e) => e.status === "pending_approval");
   const pendingPayments = payments.filter((p) => p.status === "pending");
+  const approveExpenseMutation = useApproveExpense();
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+
+  const handleApproveExpense = async (ex: any) => {
+    setApprovingId(ex.id);
+    try {
+      await approveExpenseMutation.mutateAsync({ id: ex.id });
+      mockStore.updateExpenseStatus(ex.id, "approved");
+      notify(`Voucher ${ex.expenseNumber} approved successfully.`);
+    } catch (err: any) {
+      notify(err?.message || `Failed to approve voucher ${ex.expenseNumber}.`);
+    } finally {
+      setApprovingId(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -907,8 +936,14 @@ function AccountantDashboard({
                   </div>
                   <div className="text-right">
                     <p className="font-mono font-bold text-foreground">{formatCurrency(ex.amount)}</p>
-                    <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => notify(`Voucher ${ex.expenseNumber} approved.`)}>
-                      Approve
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 text-[10px] cursor-pointer"
+                      disabled={approvingId === ex.id}
+                      onClick={() => handleApproveExpense(ex)}
+                    >
+                      {approvingId === ex.id ? "Approving…" : "Approve"}
                     </Button>
                   </div>
                 </div>
@@ -1088,7 +1123,52 @@ function EmployeeDashboard({
   attendance: any[];
   notify: (msg: string) => void;
 }) {
+  const recordPunchMutation = useRecordPunch();
+  const [isPunching, setIsPunching] = useState(false);
   const hasProject = user.assignedProjects && user.assignedProjects.length > 0;
+
+  const handlePunchAttendance = async () => {
+    setIsPunching(true);
+    try {
+      const timestamp = new Date().toISOString();
+      await recordPunchMutation.mutateAsync({
+        employeeId: user.id || "emp-1",
+        type: "IN",
+        timestamp,
+      });
+      mockStore.addAttendanceRecord({
+        date: new Date().toISOString().slice(0, 10),
+        projectId: user.assignedProjects?.[0]?.projectId || "prj-1",
+        projectName: user.assignedProjects?.[0]?.projectName || "Site HQ",
+        totalWorkforce: 1,
+        totalPresent: 1,
+        totalAbsent: 0,
+        regularHours: 8,
+        overtimeHours: 0,
+        totalWageImpact: 850,
+        submittedBy: user.name,
+        entries: [
+          {
+            workerId: user.id,
+            workerName: user.name,
+            trade: user.title,
+            contractorName: "Direct Staff",
+            status: "present",
+            hours: 8,
+            otHours: 0,
+            wageRate: 850,
+          },
+        ],
+      });
+      const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      notify(`Attendance punch-in confirmed at ${timeStr}.`);
+    } catch (err: any) {
+      notify(err?.message || "Failed to record attendance punch.");
+    } finally {
+      setIsPunching(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="rounded-xl border border-primary/20 bg-primary/5 p-6 shadow-sm">
@@ -1101,10 +1181,11 @@ function EmployeeDashboard({
           </div>
           <Button
             size="sm"
-            onClick={() => notify("Attendance punch-in confirmed at 08:15 AM.")}
-            className="gap-1.5"
+            disabled={isPunching}
+            onClick={handlePunchAttendance}
+            className="gap-1.5 cursor-pointer shadow-sm"
           >
-            <CheckCircle2 className="size-4" /> Punch Today's Attendance
+            <CheckCircle2 className="size-4" /> {isPunching ? "Punching in…" : "Punch Today's Attendance"}
           </Button>
         </div>
       </div>

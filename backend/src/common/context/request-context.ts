@@ -10,10 +10,11 @@ export interface RequestContextData {
   path?: string | undefined;
   method?: string | undefined;
 
-  // Placeholder fields - these are strictly unavailable until Phase 02/03 authentication & tenancy
+  // Authenticated identity context established strictly via valid tokens/sessions
   tenantId?: string | null | undefined;
   userId?: string | null | undefined;
   sessionId?: string | null | undefined;
+  sessionVersion?: number | null | undefined;
 }
 
 const asyncLocalStorage = new AsyncLocalStorage<RequestContextData>();
@@ -48,6 +49,45 @@ export class RequestContext {
   }
 
   /**
+   * Set authenticated identity on the active request context
+   */
+  public static setAuth(auth: {
+    userId: string;
+    tenantId: string;
+    sessionId: string;
+    sessionVersion?: number;
+  }): void {
+    const store = asyncLocalStorage.getStore();
+    if (store) {
+      store.userId = auth.userId;
+      store.tenantId = auth.tenantId;
+      store.sessionId = auth.sessionId;
+      store.sessionVersion = auth.sessionVersion;
+    }
+  }
+
+  /**
+   * Retrieve authenticated user ID from context, or undefined
+   */
+  public static getUserId(): string | undefined {
+    return asyncLocalStorage.getStore()?.userId || undefined;
+  }
+
+  /**
+   * Retrieve authenticated tenant ID from context, or undefined
+   */
+  public static getTenantId(): string | undefined {
+    return asyncLocalStorage.getStore()?.tenantId || undefined;
+  }
+
+  /**
+   * Retrieve active session ID from context, or undefined
+   */
+  public static getSessionId(): string | undefined {
+    return asyncLocalStorage.getStore()?.sessionId || undefined;
+  }
+
+  /**
    * Create a fresh RequestContextData object from HTTP request headers
    */
   public static createFromHeaders(headers: Record<string, string | string[] | undefined>, reqInfo?: {
@@ -75,10 +115,11 @@ export class RequestContext {
       method: reqInfo?.method,
       clientIp: reqInfo?.clientIp,
       userAgent: reqInfo?.userAgent,
-      // Authentication and tenant headers are strictly NOT trusted as identity in Phase 01
+      // Authentication and tenant headers are strictly NOT trusted as identity
       tenantId: null,
       userId: null,
       sessionId: null,
+      sessionVersion: null,
     };
   }
 }

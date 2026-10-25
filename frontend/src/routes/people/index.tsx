@@ -59,6 +59,8 @@ import { CustomerRole } from "@/authorization";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ExcelImportWizard } from "@/components/shared/excel-import-wizard";
 import { calculateWorkforceProductivity } from "@/lib/calculations";
+import { peopleApi } from "@/lib/api";
+import { downloadCsv } from "@/lib/export-utils";
 
 export const Route = createFileRoute("/people/")({
   head: () => ({
@@ -126,7 +128,74 @@ function PeoplePage() {
   // Dynamic workers list
   const [workersList, setWorkersList] = useState<AttendanceEntry[]>([]);
 
+  // Punch & Leave States
+  const [isPunching, setIsPunching] = useState(false);
+  const [applyLeaveOpen, setApplyLeaveOpen] = useState(false);
+  const [leaveType, setLeaveType] = useState<string>("CASUAL");
+  const [leaveStartDate, setLeaveStartDate] = useState<string>(new Date().toISOString().split("T")[0] || "");
+  const [leaveEndDate, setLeaveEndDate] = useState<string>(new Date().toISOString().split("T")[0] || "");
+  const [leaveReason, setLeaveReason] = useState<string>("");
+  const [isSubmittingLeave, setIsSubmittingLeave] = useState(false);
+
   // Handlers
+  const handlePunchCheckIn = async () => {
+    try {
+      setIsPunching(true);
+      await peopleApi.recordPunch({
+        employeeId: user.id || "emp-1",
+        type: "IN",
+        timestamp: new Date().toISOString(),
+      });
+      notify("Attendance punch recorded successfully.");
+    } catch (err: any) {
+      notify(err?.message || "Failed to record punch check-in.");
+    } finally {
+      setIsPunching(false);
+    }
+  };
+
+  const handleApplyLeave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setIsSubmittingLeave(true);
+      await peopleApi.createLeave({
+        employeeId: user.id || "emp-1",
+        leaveType: leaveType as any,
+        startDate: leaveStartDate,
+        endDate: leaveEndDate,
+        reason: leaveReason || "Personal Leave",
+      });
+      notify(`Leave application for ${leaveType} submitted successfully.`);
+      setApplyLeaveOpen(false);
+      setLeaveReason("");
+    } catch (err: any) {
+      notify(err?.message || "Failed to submit leave request.");
+    } finally {
+      setIsSubmittingLeave(false);
+    }
+  };
+
+  const handleExportProductivityCsv = () => {
+    const headers = [
+      "Contractor Gang",
+      "Trade / Specialty",
+      "Current Deployment",
+      "Supervisor Name",
+      "Daily Wage Rate (INR)",
+      "Assigned Project",
+    ];
+    const rows = labourContractors.map((c) => [
+      c.name,
+      c.trade,
+      c.currentDeployment,
+      c.supervisorName,
+      c.dailyWageRate,
+      c.assignedProject,
+    ]);
+    downloadCsv("Labour_Productivity_Muster_Report", headers, rows);
+    notify("Labour Productivity Report downloaded.");
+  };
+
   const handleAddEmployee = (e: React.FormEvent) => {
     e.preventDefault();
     if (!empName) return;
@@ -146,6 +215,7 @@ function PeoplePage() {
   const handleSaveAttendance = () => {
     notify(`Muster roll for ${attDate} verified and saved.`);
   };
+
 
   // KPIs
   const totalStaff = employees.length;
@@ -171,8 +241,8 @@ function PeoplePage() {
           title="My Employee Workspace"
           subtitle={`Personal attendance log, leave records, assigned tasks, and engineering documents for ${user.name}.`}
           actions={
-            <Button size="sm" onClick={() => notify("Attendance check-in logged at 08:15 AM.")} className="gap-1.5 shadow-sm">
-              <CheckCircle2 className="size-4" /> Punch Check-In
+            <Button size="sm" onClick={handlePunchCheckIn} disabled={isPunching} className="gap-1.5 shadow-sm">
+              <CheckCircle2 className="size-4" /> {isPunching ? "Punching..." : "Punch Check-In"}
             </Button>
           }
         />
@@ -214,8 +284,8 @@ function PeoplePage() {
                     title="No attendance recorded today"
                     description="Use the Punch Check-In action when arriving at your assigned project site."
                     action={{
-                      label: "Punch Check-In",
-                      onClick: () => notify("Attendance check-in logged successfully."),
+                      label: isPunching ? "Punching..." : "Punch Check-In",
+                      onClick: handlePunchCheckIn,
                     }}
                   />
                 ) : (
@@ -242,7 +312,7 @@ function PeoplePage() {
             <div className="rounded-xl border bg-card p-6 shadow-sm space-y-4">
               <div className="flex justify-between items-center border-b pb-3">
                 <h3 className="font-bold text-sm text-foreground">Leave Balances</h3>
-                <Button size="sm" onClick={() => notify("Leave application submitted.")}>Apply for Leave</Button>
+                <Button size="sm" onClick={() => setApplyLeaveOpen(true)}>Apply for Leave</Button>
               </div>
               <div className="grid gap-4 sm:grid-cols-3 text-xs">
                 <div className="p-4 rounded-lg border bg-muted/20">
@@ -295,9 +365,78 @@ function PeoplePage() {
             </div>
           )}
         </Tabs>
+
+        {/* Apply for Leave Modal for Employee */}
+        <Dialog open={applyLeaveOpen} onOpenChange={setApplyLeaveOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-base">Apply for Leave</DialogTitle>
+              <DialogDescription className="text-xs">
+                Submit formal leave application to project manager for approval.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleApplyLeave} className="space-y-4 pt-2 text-xs">
+              <div className="space-y-1.5">
+                <Label>Leave Type</Label>
+                <select
+                  value={leaveType}
+                  onChange={(e) => setLeaveType(e.target.value)}
+                  className="w-full h-9 rounded-md border bg-background px-3 text-xs"
+                >
+                  <option value="CASUAL">Casual Leave (CL)</option>
+                  <option value="EARNED">Earned Leave (EL)</option>
+                  <option value="SICK">Sick Leave (SL)</option>
+                  <option value="MATERNITY">Maternity / Paternity Leave</option>
+                  <option value="UNPAID">Loss of Pay (LWP)</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Start Date</Label>
+                  <Input
+                    type="date"
+                    required
+                    value={leaveStartDate}
+                    onChange={(e) => setLeaveStartDate(e.target.value)}
+                    className="h-9 text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>End Date</Label>
+                  <Input
+                    type="date"
+                    required
+                    value={leaveEndDate}
+                    onChange={(e) => setLeaveEndDate(e.target.value)}
+                    className="h-9 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Reason for Leave</Label>
+                <Input
+                  required
+                  placeholder="e.g. Family emergency / Medical rest"
+                  value={leaveReason}
+                  onChange={(e) => setLeaveReason(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+
+              <FormActions
+                onCancel={() => setApplyLeaveOpen(false)}
+                isSubmitting={isSubmittingLeave}
+                submitLabel="Submit Leave Request"
+              />
+            </form>
+          </DialogContent>
+        </Dialog>
       </AppShell>
     );
   }
+
 
   // HR / Manager View (Full Workspace)
   return (
@@ -396,7 +535,7 @@ function PeoplePage() {
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
-            <Clock className="size-4" /> Attendance Muster & Leave
+            <Clock className="size-4" /> Worker Attendance (Muster) & Leave
           </button>
           <button
             type="button"
@@ -428,7 +567,7 @@ function PeoplePage() {
             <div className="grid gap-6 md:grid-cols-2">
               <div className="rounded-xl border bg-card p-5 shadow-panel space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-sm text-foreground">Active Subcontractor Labour Gangs</h3>
+                  <h3 className="font-bold text-sm text-foreground">Active Subcontractor Teams / Gangs</h3>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -528,7 +667,7 @@ function PeoplePage() {
                   onClick={() => setWorkforceSubTab("contractors")}
                   className="text-xs gap-1.5"
                 >
-                  <HardHat className="size-3.5" /> Labour Contractors ({labourContractors.length})
+                  <HardHat className="size-3.5" /> Subcontractor Teams ({labourContractors.length})
                 </Button>
               </div>
 
@@ -538,7 +677,7 @@ function PeoplePage() {
                 </Button>
               ) : (
                 <Button size="sm" onClick={() => setAddGangOpen(true)} className="gap-1.5 text-xs">
-                  <HardHat className="size-3.5" /> Register Gang
+                  <HardHat className="size-3.5" /> Add Subcontractor Team
                 </Button>
               )}
             </div>
@@ -969,8 +1108,8 @@ function PeoplePage() {
               <div className="rounded-xl border bg-card p-6 shadow-panel space-y-3">
                 <h3 className="font-bold text-sm text-foreground">Workforce & Labour Productivity Analytics</h3>
                 <p className="text-xs text-muted-foreground">Monthly muster roll summaries, contractor man-hours, and wage payouts</p>
-                <Button size="sm" onClick={() => notify("Labour Productivity Report downloaded.")} className="gap-2">
-                  <Download className="size-4" /> Export Muster Roll (PDF/Excel)
+                <Button size="sm" onClick={handleExportProductivityCsv} className="gap-2">
+                  <Download className="size-4" /> Export Muster Roll (CSV)
                 </Button>
               </div>
             )}

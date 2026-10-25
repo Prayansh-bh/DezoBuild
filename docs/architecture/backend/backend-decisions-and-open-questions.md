@@ -117,6 +117,50 @@ Scope           : Architectural Decision Records, Open Questions & Roadmap
 
 ---
 
+### ADR-014: Tenant Provisioning Platform Security Boundary
+* **Context**: In multi-tenant SaaS, tenant workspace provisioning is a platform-governance privilege (`owner.dezobuild.com` / `SUPER_ADMIN`), not a capability of regular customer users within an existing tenant.
+* **Decision**: Strictly protect `POST /api/v1/tenants` with a platform provisioning gate. Ordinary customer users with a valid tenant context are rejected with `403 Forbidden`. Only platform administrative contexts (`SUPER_ADMIN`, platform bootstrapping) can provision new root tenants via HTTP.
+* **Alternatives Considered**: Permitting any authenticated customer to create arbitrary tenants. Rejected as an architectural defect and security vulnerability.
+* **Consequences**: Guarantees strict boundary separation between platform governance and tenant customer workspaces.
+
+---
+
+### ADR-015: Foreign Key Deletion and Hierarchy Archive Policy
+* **Context**: Construction enterprises manage mission-critical audit trails (commercial contracts, tax records, project progress, ledger logs).
+* **Decision**: Primary business structural anchors (`User`, `Company`, `Branch`) use `onDelete: RESTRICT` against `Tenant`. `Company` uses `onDelete: RESTRICT` against `Branch`. Lookup taxonomies (`Department`) cascade if a tenant is decommissioned, but root hard-deletion is blocked while business anchors exist. Tenant decommission is executed via soft-delete (`deletedAt`, `status: "SUSPENDED"`).
+* **Alternatives Considered**: Cascading deletions across all entities. Rejected due to catastrophic accidental data loss risk.
+* **Consequences**: Consistent, safe hierarchy preservation with zero risk of accidental tenant data destruction.
+
+---
+
+### ADR-016: Read-Only Inventory Availability & Allocation Intelligence Layer
+* **Context**: Inventory intelligence (real-time availability, cross-store positions, project supply visibility, in-transit transfers, pending POs, central warehouse allocations, shortage detection) requires multi-dimensional synthesis across distinct operational entities without mutating ledger state.
+* **Decision**: Implement Phase 07.10 as a strictly **read-only decision-support intelligence layer**.
+  - No new database tables, no migrations, no caching (Redis/materialized views), and zero background schedulers.
+  - Authoritative balance source remains `StoreStockBalance` (`quantityOnHand`, `reservedQuantity`).
+  - No `StockMovement` creation and zero mutations to any ledger, reservation, transfer, or procurement entity.
+  - Strict mathematical separation between physical site stock and central warehouse project allocations.
+  - Clear separation between unfulfilled open demand and incoming supply pipelines (transfers + POs) to eliminate double-counting.
+* **Alternatives Considered**: Materialized projection tables, Redis caches, or write-time aggregation triggers. Rejected due to cache invalidation complexity, concurrency drift risks, and unnecessary write overhead.
+* **Consequences**: Deterministic, real-time auditable availability intelligence with zero risk of stock drift or ledger mutation.
+
+---
+
+### ADR-017: BOQ Contract Hierarchy, Digital Measurement Book (MB) Lifecycle & Pessimistic Locking
+* **Context**: Construction commercial scope is defined in Bill of Quantities (BOQ), while physical work executed on site is certified through Digital Measurement Books (MB). Ensuring auditability, race-free cumulative certified quantities, segregation of duties (SoD), and non-destructive corrections without mutating historical records is paramount.
+* **Decision**: Implement Phase 07 as an ACID-compliant commercial measurement engine:
+  - **Data Models**: `BoqItem`, `DigitalMbRecord`, `MeasurementDimension`, and `DigitalMbSequence`.
+  - **Decimal Arithmetic**: All monetary amounts (`totalAmount = quantity * unitRate`) and dimensional calculations (Volume, Area, Length, Count, Direct Quantity) are computed strictly with `Prisma.Decimal` and `ROUND_HALF_UP` to 2 decimal places. JS floating point is strictly forbidden.
+  - **Pessimistic Locking Cumulative Cache**: Measurement approval executes inside an ACID transaction with `SELECT ... FOR UPDATE` on `BoqItem`. `BoqItem.executedQuantity` is updated atomically from `previousCumulativeQuantity + currentQuantity`.
+  - **Segregation of Duties (SoD)**: The creator of an MB cannot verify or approve their own measurement (`createdById !== verifiedById`, `createdById !== approvedById`, `submittedById !== approvedById`).
+  - **Controlled Excess Execution**: If cumulative quantity exceeds contracted BOQ quantity (`cumulativeQuantity > boqItem.quantity`), approval requires explicit `allowExcess = true` and `excessJustification` ($\ge 10$ chars) authorized by managerial roles (`PROJECT_MANAGER`, `COMPANY_ADMIN`, `COMPANY_OWNER`).
+  - **Compensating Corrections**: Approved MB records are strictly immutable. Adjustments are recorded as new `DigitalMbRecord` entries with `isCorrection = true` and `supersedesMbRecordId`, following the full DRAFT $\rightarrow$ SUBMITTED $\rightarrow$ VERIFIED $\rightarrow$ APPROVED lifecycle.
+  - **Phase 10 Read-Only Billing Interface**: Expose `BoqBillingPositionDto` (contract amount, certified amount, remaining quantity, completion percentage) without mutating financial ledgers.
+* **Alternatives Considered**: In-memory running totals, auto-updating approved records, or trusting client-supplied total amounts. Rejected due to audit trail corruption and race condition vulnerabilities.
+* **Consequences**: Strict mathematical and legal auditability for contractor measurement and certification.
+
+---
+
 ## 2. Classified Open Questions Catalog
 
 ```text

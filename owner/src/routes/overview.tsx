@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   Activity,
   ArrowUpRight,
@@ -10,7 +10,9 @@ import {
   Globe,
   HardHat,
   LineChart,
+  Loader2,
   Radio,
+  RefreshCw,
   Server,
   ShieldCheck,
   TrendingUp,
@@ -21,49 +23,78 @@ import { StatGrid, type StatItem } from "../components/shared/stat-grid";
 import { StatusBadge } from "../components/shared/status-badge";
 import { EmptyState } from "../components/shared/empty-state";
 import {
-  MOCK_AUDIT_LOGS,
-  MOCK_HEALTH_SERVICES,
-  MOCK_INVOICES,
-  MOCK_TELEMETRY,
-  MOCK_TENANTS,
-} from "../mock/platform-data";
+  platformTenantsApi,
+  platformHealthApi,
+  type PlatformTenantListItem,
+  type BackendHealthDto,
+} from "../lib/api";
+import { MOCK_HEALTH_SERVICES } from "../mock/platform-data";
 
 interface OverviewViewProps {
   onNavigate: (tabId: string) => void;
 }
 
 export function OverviewView({ onNavigate }: OverviewViewProps) {
-  const hasBillingData = MOCK_TELEMETRY.totalMrr > 0;
-  const hasTenants = MOCK_TENANTS.length > 0;
+  const [tenants, setTenants] = useState<PlatformTenantListItem[]>([]);
+  const [healthData, setHealthData] = useState<BackendHealthDto | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const [tenantRes, healthRes] = await Promise.allSettled([
+        platformTenantsApi.listTenants({ limit: 100 }),
+        platformHealthApi.getHealth(),
+      ]);
+
+      if (tenantRes.status === "fulfilled") {
+        setTenants(tenantRes.value.items || []);
+      }
+      if (healthRes.status === "fulfilled") {
+        setHealthData(healthRes.value);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const totalTenants = tenants.length;
+  const activeTenants = tenants.filter((t) => t.status === "ACTIVE").length;
+  const totalUsers = tenants.reduce((acc, t) => acc + (t.userCount || 0), 0);
+  const totalSites = tenants.reduce((acc, t) => acc + (t.projectCount || 0), 0);
 
   const statItems: StatItem[] = [
     {
-      label: "Monthly Recurring Revenue",
-      value: hasBillingData ? `₹${(MOCK_TELEMETRY.totalMrr / 100000).toFixed(2)} Lakhs` : "₹0",
-      hint: hasBillingData ? `ARR: ₹${(MOCK_TELEMETRY.totalArr / 10000000).toFixed(2)} Cr` : "Billing engine not connected",
-      tone: hasBillingData ? "healthy" : "default",
-      icon: <TrendingUp className="size-5" />,
-    },
-    {
       label: "Enterprise Tenant Accounts",
-      value: hasTenants ? `${MOCK_TENANTS.filter((t) => t.status === "active").length} / ${MOCK_TENANTS.length}` : "0 Active",
-      hint: hasTenants ? "Active tenant organizations" : "No tenant organizations provisioned",
-      tone: hasTenants ? "info" : "default",
+      value: isLoading ? "Loading…" : `${activeTenants} / ${totalTenants}`,
+      hint: totalTenants > 0 ? "Authoritative PostgreSQL tenant workspaces" : "No tenant organizations provisioned",
+      tone: totalTenants > 0 ? "info" : "default",
       icon: <Building2 className="size-5" />,
     },
     {
-      label: "Active Field Users (24h)",
-      value: MOCK_TELEMETRY.activeUsers24h > 0 ? MOCK_TELEMETRY.activeUsers24h.toLocaleString("en-IN") : "0",
-      hint: "Identity telemetry not connected",
-      tone: "default",
+      label: "Active Field Users & Seats",
+      value: isLoading ? "Loading…" : `${totalUsers.toLocaleString("en-IN")} Allocated`,
+      hint: "Customer workspace user accounts",
+      tone: totalUsers > 0 ? "healthy" : "default",
       icon: <Users className="size-5" />,
     },
     {
-      label: "API Gateway Telemetry",
-      value: "Not Connected",
-      hint: "Production metrics collector pending",
-      tone: "default",
-      icon: <Activity className="size-5" />,
+      label: "Active Construction Sites",
+      value: isLoading ? "Loading…" : `${totalSites} Active Projects`,
+      hint: "Multi-metro project partitions",
+      tone: totalSites > 0 ? "info" : "default",
+      icon: <HardHat className="size-5" />,
+    },
+    {
+      label: "PostgreSQL Database Engine",
+      value: healthData?.database.connected ? "Connected (Healthy)" : "Checking…",
+      hint: healthData ? `Latency: ${healthData.database.latencyMs}ms · v${healthData.version}` : "Live backend cluster connection",
+      tone: healthData?.database.connected ? "healthy" : "default",
+      icon: <Database className="size-5" />,
     },
   ];
 
@@ -73,9 +104,16 @@ export function OverviewView({ onNavigate }: OverviewViewProps) {
       <PageHeader
         eyebrow="Platform Executive Governance"
         title="SaaS Platform Control Center"
-        subtitle="Global multi-tenant governance, billing collections, feature entitlements, and operational infrastructure."
+        subtitle="Global multi-tenant governance, cluster telemetry, feature entitlements, and operational infrastructure."
         actions={
           <>
+            <button
+              onClick={loadData}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground transition-all hover:bg-muted cursor-pointer"
+            >
+              <RefreshCw className={`size-3.5 ${isLoading ? "animate-spin" : ""}`} />
+              <span>Refresh</span>
+            </button>
             <button
               onClick={() => onNavigate("tenants")}
               className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 cursor-pointer"
@@ -108,48 +146,53 @@ export function OverviewView({ onNavigate }: OverviewViewProps) {
                 <span>Enterprise Customer Portfolios</span>
               </h2>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Active tenant organizations and workspace deployments
+                Active tenant organizations and PostgreSQL workspace partitions
               </p>
             </div>
-            {hasTenants && (
+            {tenants.length > 0 && (
               <button
                 onClick={() => onNavigate("tenants")}
                 className="text-xs font-semibold text-primary hover:underline flex items-center gap-1 cursor-pointer"
               >
-                <span>View All ({MOCK_TENANTS.length})</span>
+                <span>View All ({tenants.length})</span>
                 <ArrowUpRight className="size-3.5" />
               </button>
             )}
           </div>
 
-          {hasTenants ? (
+          {isLoading ? (
+            <div className="p-12 text-center flex flex-col items-center justify-center space-y-3">
+              <Loader2 className="size-6 text-primary animate-spin" />
+              <p className="text-xs text-muted-foreground">Loading customer tenant portfolios…</p>
+            </div>
+          ) : tenants.length > 0 ? (
             <div className="space-y-2.5">
-              {MOCK_TENANTS.slice(0, 5).map((tenant) => (
+              {tenants.slice(0, 5).map((tenant) => (
                 <div
                   key={tenant.id}
                   className="flex items-center justify-between p-3 rounded-lg border border-border/60 bg-muted/30 hover:bg-muted/60 transition-colors"
                 >
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                       <span className="text-xs font-bold text-foreground">{tenant.name}</span>
-                      <span className="rounded bg-primary/10 border border-primary/20 px-1.5 py-0.5 text-[9px] font-semibold text-primary">
+                      <span className="rounded bg-primary/10 border border-primary/20 px-1.5 py-0.5 text-[9px] font-semibold text-primary shrink-0">
                         {tenant.planTier}
                       </span>
-                      {tenant.customDomain && (
-                        <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                          <Globe className="size-3" /> {tenant.customDomain}
+                      {tenant.domain && (
+                        <span className="text-[10px] text-muted-foreground flex items-center gap-1 shrink-0">
+                          <Globe className="size-3" /> {tenant.domain}
                         </span>
                       )}
                     </div>
                     <p className="text-[11px] text-muted-foreground">
-                      {tenant.activeSitesCount} active sites · {tenant.seatsUsed}/{tenant.seatsAllocated} seats · {tenant.contactPerson}
+                      {tenant.projectCount} active sites · {tenant.userCount} user seats · {tenant.companyCount} legal entities
                     </p>
                   </div>
                   <div className="text-right">
-                    <div className="text-xs font-bold text-foreground tabular-nums">
-                      ₹{(tenant.mrr / 1000).toLocaleString("en-IN")}k/mo
+                    <StatusBadge status={tenant.status as any} className="text-[9px]" />
+                    <div className="text-[10px] font-mono text-muted-foreground mt-1">
+                      {new Date(tenant.createdAt).toLocaleDateString()}
                     </div>
-                    <StatusBadge status={tenant.status} className="mt-1 text-[9px]" />
                   </div>
                 </div>
               ))}
@@ -184,7 +227,25 @@ export function OverviewView({ onNavigate }: OverviewViewProps) {
           </div>
 
           <div className="space-y-2.5">
-            {MOCK_HEALTH_SERVICES.slice(0, 5).map((svc) => (
+            {/* Primary PostgreSQL */}
+            <div className="p-2.5 rounded-lg border border-border/60 bg-muted/20 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-foreground">PostgreSQL Multi-Tenant Cluster (Primary)</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  Database · {healthData ? `Latency: ${healthData.database.latencyMs}ms` : "Live"}
+                </p>
+              </div>
+              <span className={`rounded border px-2 py-0.5 text-[10px] font-semibold ${
+                healthData?.database.connected
+                  ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                  : "bg-muted border-border text-muted-foreground"
+              }`}>
+                {healthData?.database.connected ? "Operational" : "Checking…"}
+              </span>
+            </div>
+
+            {/* Other nodes */}
+            {MOCK_HEALTH_SERVICES.slice(1, 5).map((svc) => (
               <div
                 key={svc.id}
                 className="p-2.5 rounded-lg border border-border/60 bg-muted/20 flex items-center justify-between"
@@ -203,70 +264,12 @@ export function OverviewView({ onNavigate }: OverviewViewProps) {
           </div>
 
           <div className="pt-2 border-t border-border flex items-center justify-between text-xs">
-            <span className="text-muted-foreground">Live Telemetry Agent</span>
-            <span className="text-muted-foreground font-semibold flex items-center gap-1">
-              Configuration Required
+            <span className="text-muted-foreground">Cluster Telemetry Source</span>
+            <span className="text-foreground font-semibold flex items-center gap-1 font-mono text-[11px]">
+              /api/v1/health
             </span>
           </div>
         </div>
-      </div>
-
-      {/* Platform Security Audit Trail */}
-      <div className="rounded-xl border border-border/80 bg-card p-5 shadow-panel space-y-4">
-        <div className="flex items-center justify-between border-b border-border/60 pb-3">
-          <div>
-            <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
-              <Activity className="size-4 text-primary" />
-              <span>Platform Security & Governance Audit Log</span>
-            </h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Immutable administrative and tenant modification events
-            </p>
-          </div>
-          {MOCK_AUDIT_LOGS.length > 0 && (
-            <button
-              onClick={() => onNavigate("audit")}
-              className="text-xs font-semibold text-primary hover:underline cursor-pointer"
-            >
-              Full Audit Trail →
-            </button>
-          )}
-        </div>
-
-        {MOCK_AUDIT_LOGS.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-border bg-muted/40 text-muted-foreground">
-                  <th className="p-3 font-semibold">Timestamp</th>
-                  <th className="p-3 font-semibold">Actor</th>
-                  <th className="p-3 font-semibold">Action</th>
-                  <th className="p-3 font-semibold">Target Entity</th>
-                  <th className="p-3 font-semibold">Details</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60 text-foreground">
-                {MOCK_AUDIT_LOGS.map((log) => (
-                  <tr key={log.id} className="hover:bg-muted/30 transition-colors">
-                    <td className="p-3 text-muted-foreground tabular-nums">{log.timestamp}</td>
-                    <td className="p-3 font-semibold text-red-600 dark:text-red-400">{log.actorRole}</td>
-                    <td className="p-3 font-semibold">{log.action}</td>
-                    <td className="p-3 text-muted-foreground">{log.targetEntity}</td>
-                    <td className="p-3 text-muted-foreground text-[11px] truncate max-w-md">
-                      {log.details}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <EmptyState
-            icon={Activity}
-            title="No audit events recorded yet"
-            description="Administrative actions, tenant creations, and security policy modifications will appear here in an immutable audit ledger."
-          />
-        )}
       </div>
     </div>
   );

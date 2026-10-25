@@ -34,6 +34,7 @@ import {
   calculateProjectProfitability,
   calculateEarnedValueEAC,
 } from "@/lib/calculations";
+import { downloadCsv } from "@/lib/export-utils";
 import { formatCurrency, mockStore, useMockStore, useContextualData } from "@/mock";
 import type {
   AdvanceRecord,
@@ -413,7 +414,7 @@ function FinancePage() {
               </Button>
             )}
             <Button size="sm" onClick={() => setAddRaBillOpen(true)} className="gap-1.5 shadow-sm text-xs">
-              <Plus className="size-3.5" /> Contractor RA Bill
+              <Plus className="size-3.5" /> Contractor Progress Bill (RA)
             </Button>
           </div>
         }
@@ -458,9 +459,9 @@ function FinancePage() {
         <div className="flex border-b border-border/80 overflow-x-auto">
           {[
             { id: "overview", label: "Financial Overview", icon: PieChart },
-            { id: "vouchers", label: `Vouchers & RA Billing (${expenses.length + payments.length + contractorRaBills.length})`, icon: Receipt },
-            { id: "cash_flow", label: "Cash Flow & Aging", icon: Calendar },
-            { id: "pnl_eac", label: "Project P&L & EAC", icon: TrendingUp },
+            { id: "vouchers", label: `Bills & Progress Invoices (${expenses.length + payments.length + contractorRaBills.length})`, icon: Receipt },
+            { id: "cash_flow", label: "Cash Flow & Overdue Bills", icon: Calendar },
+            { id: "pnl_eac", label: "Project P&L & Cost Forecast", icon: TrendingUp },
             { id: "directory", label: `Vendor Directory (${vendors.length + contractors.length})`, icon: Users },
             { id: "reports", label: "Commercial Reports", icon: FileText },
           ].map((sec) => {
@@ -534,7 +535,7 @@ function FinancePage() {
                     { id: "expenses", label: `Expenses (${expenses.length})` },
                     { id: "payments", label: `Payments (${payments.length})` },
                     { id: "advances", label: `Advances (${advances.length})` },
-                    { id: "contractor_ra", label: `Contractor RA Bills (${contractorRaBills.length})` },
+                    { id: "contractor_ra", label: `Contractor Progress Bills (RA) (${contractorRaBills.length})` },
                     { id: "client_billing", label: `Client Claims (${clientBillings.length})` },
                     { id: "final_bills", label: `Final Bills (${finalBills.length})` },
                   ] as const
@@ -1035,22 +1036,77 @@ function FinancePage() {
             <div className="rounded-xl border bg-card p-5 shadow-panel space-y-3">
               <h4 className="font-bold text-sm">Contractor Ledger & Retention Statement</h4>
               <p className="text-muted-foreground">Certified work, advance deductions, and cumulative retention balance.</p>
-              <Button size="sm" variant="outline" className="w-full" onClick={() => notify("Ledger downloaded.")}>
-                Download PDF
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  const headers = ["Bill #", "Contractor", "Project", "Gross Certified (INR)", "Retention (INR)", "TDS (INR)", "Net Payable (INR)", "Status"];
+                  const rows = store.contractorRaBills.map((b) => [
+                    b.billNumber,
+                    b.contractorName,
+                    b.projectName,
+                    b.grossBill,
+                    b.retentionAmount,
+                    b.tdsAmount,
+                    b.netPayable,
+                    b.status,
+                  ]);
+                  downloadCsv("Contractor_Ledger_Retention_Statement", headers, rows);
+                  notify("Contractor Ledger & Retention Statement downloaded.");
+                }}
+              >
+                Download CSV Ledger
               </Button>
             </div>
             <div className="rounded-xl border bg-card p-5 shadow-panel space-y-3">
               <h4 className="font-bold text-sm">Client RA Claim Certificate</h4>
               <p className="text-muted-foreground">Official measurement certified claim with GST breakdown.</p>
-              <Button size="sm" variant="outline" className="w-full" onClick={() => notify("Client Certificate downloaded.")}>
-                Download PDF
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  const headers = ["Claim #", "Project", "Location", "Cumulative Work (INR)", "Retention (INR)", "Net Claim (INR)", "Status"];
+                  const rows = contextual.projects.map((p, idx) => [
+                    `CLM-2026-00${idx + 1}`,
+                    p.name,
+                    p.location,
+                    p.budget * (p.progress / 100),
+                    p.budget * (p.progress / 100) * 0.05,
+                    p.budget * (p.progress / 100) * 0.95,
+                    "Certified",
+                  ]);
+                  downloadCsv("Client_RA_Claim_Certificate", headers, rows);
+                  notify("Client RA Claim Certificate downloaded.");
+                }}
+              >
+                Download CSV Certificate
               </Button>
             </div>
             <div className="rounded-xl border bg-card p-5 shadow-panel space-y-3">
               <h4 className="font-bold text-sm">Project P&L Statement</h4>
               <p className="text-muted-foreground">Gross profit margin and direct vs indirect cost breakdown.</p>
-              <Button size="sm" variant="outline" className="w-full" onClick={() => notify("P&L statement exported.")}>
-                Download XLSX
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  const headers = ["Project Code", "Project Name", "Client", "Contract Value (INR)", "Total Incurred (INR)", "Gross Margin %", "Status"];
+                  const rows = contextual.projects.map((p) => [
+                    p.code,
+                    p.name,
+                    p.client,
+                    p.budget,
+                    p.actualCost,
+                    p.budget > 0 ? (((p.budget - p.actualCost) / p.budget) * 100).toFixed(1) : "0.0",
+                    p.status,
+                  ]);
+                  downloadCsv("Project_PnL_Financial_Statement", headers, rows);
+                  notify("Project P&L Statement exported.");
+                }}
+              >
+                Export CSV Statement
               </Button>
             </div>
           </div>
@@ -1061,7 +1117,7 @@ function FinancePage() {
       <Dialog open={addRaBillOpen} onOpenChange={setAddRaBillOpen}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-base">Create Contractor Running Account (RA) Bill</DialogTitle>
+            <DialogTitle className="text-base">Create Contractor Progress Bill (RA)</DialogTitle>
             <DialogDescription className="text-xs">
               Calculate net payable with statutory and contractual deductions.
             </DialogDescription>
@@ -1191,7 +1247,7 @@ function FinancePage() {
 
             <FormActions
               onCancel={() => setAddRaBillOpen(false)}
-              submitLabel="Submit Contractor RA Bill"
+              submitLabel="Submit Contractor Progress Bill (RA)"
             />
           </form>
         </DialogContent>

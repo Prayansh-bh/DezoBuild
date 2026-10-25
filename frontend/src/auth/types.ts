@@ -9,8 +9,28 @@
  * and server-side RBAC will connect to this contract in later phases.
  */
 
-import type { CustomerRoleType, PlatformRoleType } from "@/authorization/roles";
+import { CustomerRole, type CustomerRoleType, type PlatformRoleType } from "@/authorization/roles";
 import type { DomainPermissions } from "@/authorization/permissions";
+
+export const ANONYMOUS_USER: CurrentUser = {
+  id: "",
+  name: "Guest",
+  email: "",
+  avatarInitials: "GU",
+  role: CustomerRole.VIEWER,
+  title: "Unauthenticated",
+  tenant: {
+    id: "",
+    name: "DEZOBUILD",
+    legalName: "DEZOBUILD Operating System",
+    code: "DEZO",
+    plan: "Standard",
+    activeSitesCount: 0,
+    currency: "INR",
+    currencySymbol: "₹",
+  },
+  assignedProjects: [],
+};
 
 export interface TenantContext {
   id: string;
@@ -49,9 +69,11 @@ export interface CurrentUser {
 
 export interface AuthContextType {
   isAuthenticated: boolean;
+  isLoading: boolean;
   user: CurrentUser;
-  availableUsers: CurrentUser[];
-  switchUser: (userId: string) => void;
-  switchRole: (role: CustomerRoleType) => void;
+  login: (credentials: { email: string; password: string }) => Promise<void>;
+  logout: () => Promise<void>;
+  refreshSession: () => Promise<string | null>;
   isPlatformAdmin: boolean;
 }
+

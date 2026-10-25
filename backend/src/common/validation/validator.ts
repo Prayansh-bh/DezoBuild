@@ -6,7 +6,11 @@ export class DtoValidator {
    * Validate arbitrary data against a Zod schema.
    * Throws a structured ValidationError (HTTP 422) if validation fails.
    */
-  public static validate<T>(schema: z.ZodType<T>, data: unknown, customMessage = "Input validation failed"): T {
+  public static validate<TSchema extends z.ZodTypeAny>(
+    schema: TSchema,
+    data: unknown,
+    customMessage = "Input validation failed"
+  ): z.output<TSchema> {
     const result = schema.safeParse(data);
 
     if (!result.success) {

@@ -299,7 +299,7 @@ function DocumentsPage() {
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
-            <FileCode className="size-4" /> GFC Drawing Register ({store.drawings.length})
+            <FileCode className="size-4" /> Site Drawings (GFC) ({store.drawings.length})
           </button>
           <button
             type="button"
@@ -310,7 +310,7 @@ function DocumentsPage() {
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
-            <HelpCircle className="size-4" /> RFI Technical Queries ({store.rfis.length})
+            <HelpCircle className="size-4" /> Site Queries & Clarifications (RFI) ({store.rfis.length})
           </button>
           <button
             type="button"
@@ -565,7 +565,7 @@ function DocumentsPage() {
                 title="No technical queries logged"
                 description="Raise RFIs to clarify structural discrepancies, MEP clashes, or design ambiguities."
                 action={{
-                  label: "Raise RFI",
+                  label: "Ask Site Query (RFI)",
                   onClick: () => setCreateRfiOpen(true),
                 }}
               />

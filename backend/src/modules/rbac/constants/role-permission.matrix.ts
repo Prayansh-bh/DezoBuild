@@ -1,0 +1,267 @@
+import { ALL_CANONICAL_PERMISSION_NAMES } from "./permissions.catalog";
+
+/**
+ * The FROZEN 9 Authoritative Customer Roles
+ */
+export const AUTHORITATIVE_CUSTOMER_ROLES = [
+  "COMPANY_OWNER",
+  "COMPANY_ADMIN",
+  "PROJECT_MANAGER",
+  "SITE_ENGINEER",
+  "PROCUREMENT_STORE",
+  "ACCOUNTANT",
+  "HR",
+  "EMPLOYEE",
+  "VIEWER",
+] as const;
+
+export type CustomerRoleName = (typeof AUTHORITATIVE_CUSTOMER_ROLES)[number];
+
+export const PLATFORM_ROLE = "SUPER_ADMIN" as const;
+
+export interface RoleMetadata {
+  name: CustomerRoleName;
+  displayName: string;
+  description: string;
+  scopeLevel: "TENANT" | "PROJECT" | "STORE";
+}
+
+export const ROLE_DEFINITIONS: readonly RoleMetadata[] = [
+  {
+    name: "COMPANY_OWNER",
+    displayName: "Company Owner",
+    description: "Full corporate authority, subscription management, final commercial/payout approvals, budget baseline revisions.",
+    scopeLevel: "TENANT",
+  },
+  {
+    name: "COMPANY_ADMIN",
+    displayName: "Company Admin",
+    description: "User management, RBAC configuration, company/branch masters, global approval policies, vendor onboardings.",
+    scopeLevel: "TENANT",
+  },
+  {
+    name: "PROJECT_MANAGER",
+    displayName: "Project Manager",
+    description: "Project WBS, milestone scheduling, DPR approval, contractor RA bill verification, site budget control.",
+    scopeLevel: "PROJECT",
+  },
+  {
+    name: "SITE_ENGINEER",
+    displayName: "Site Engineer",
+    description: "Daily DPR submission, physical measurement book (MB) recording, concrete pour card checklists, safety logs.",
+    scopeLevel: "PROJECT",
+  },
+  {
+    name: "PROCUREMENT_STORE",
+    displayName: "Procurement & Store",
+    description: "Material indents, PO generation, 3-way match GRN verification, store issues, inter-site stock transfers.",
+    scopeLevel: "STORE",
+  },
+  {
+    name: "ACCOUNTANT",
+    displayName: "Accountant",
+    description: "Financial invoices, expense approvals, tax deduction compliance (TDS, Cess), contractor payment vouchers.",
+    scopeLevel: "TENANT",
+  },
+  {
+    name: "HR",
+    displayName: "HR & Workforce",
+    description: "Employee roster, trade subcontractor muster, biometric turnstile reconciliations, overtime wage impact.",
+    scopeLevel: "TENANT",
+  },
+  {
+    name: "EMPLOYEE",
+    displayName: "Employee / Staff",
+    description: "Task execution, personal daily attendance, personal expense claims, drawing viewing.",
+    scopeLevel: "PROJECT",
+  },
+  {
+    name: "VIEWER",
+    displayName: "Auditor / Viewer",
+    description: "Read-only executive visibility across dashboards, progress summaries, and compliance documents.",
+    scopeLevel: "TENANT",
+  },
+] as const;
+
+/**
+ * Authoritative Role -> Permissions Matrix
+ */
+export const ROLE_PERMISSION_MATRIX: Record<CustomerRoleName, readonly string[]> = {
+  COMPANY_OWNER: ALL_CANONICAL_PERMISSION_NAMES,
+
+  COMPANY_ADMIN: ALL_CANONICAL_PERMISSION_NAMES.filter(
+    (perm) => perm !== "finance:payment:disburse",
+  ),
+
+  PROJECT_MANAGER: [
+    "projects:view",
+    "projects:manage",
+    "projects:wbs:edit",
+    "projects:dpr:create",
+    "projects:dpr:submit",
+    "projects:dpr:approve",
+    "materials:view",
+    "materials:manage",
+    "materials:indent:create",
+    "materials:indent:approve",
+    "materials:po:create",
+    "materials:stock:transfer",
+    "materials:stock:receive",
+    "finance:view",
+    "finance:expense:create",
+    "finance:expense:approve",
+    "finance:bill:create",
+    "finance:bill:verify",
+    "finance:claim:create",
+    "finance:claim:certify",
+    "people:view",
+    "people:attendance:create",
+    "people:attendance:approve",
+    "equipment:view",
+    "equipment:fuel:log",
+    "equipment:maintenance:create",
+    "quality:view",
+    "quality:pour:create",
+    "quality:pour:approve",
+    "quality:ncr:create",
+    "quality:ncr:verify",
+    "safety:view",
+    "safety:audit:create",
+    "safety:incident:create",
+    "documents:view",
+    "documents:manage",
+    "documents:rfi:create",
+    "documents:rfi:respond",
+    "settings:view",
+    "reports:view",
+    "reports:generate",
+    "reports:export",
+    "alerts:view",
+    "alerts:manage",
+    "integrations:view",
+    "integrations:manage",
+    "ai:view",
+    "ai:generate",
+  ],
+
+  SITE_ENGINEER: [
+    "projects:view",
+    "projects:dpr:create",
+    "projects:dpr:submit",
+    "materials:view",
+    "materials:indent:create",
+    "materials:grn:create",
+    "finance:expense:create",
+    "people:view",
+    "people:attendance:create",
+    "equipment:view",
+    "equipment:fuel:log",
+    "quality:view",
+    "quality:pour:create",
+    "quality:ncr:create",
+    "safety:view",
+    "safety:audit:create",
+    "safety:incident:create",
+    "documents:view",
+    "documents:rfi:create",
+    "reports:view",
+    "alerts:view",
+    "alerts:manage",
+    "integrations:view",
+    "ai:view",
+    "ai:generate",
+  ],
+
+  PROCUREMENT_STORE: [
+    "projects:view",
+    "materials:view",
+    "materials:manage",
+    "materials:indent:create",
+    "materials:po:create",
+    "materials:po:approve",
+    "materials:grn:create",
+    "materials:grn:verify",
+    "materials:stock:issue",
+    "materials:stock:transfer",
+    "materials:stock:receive",
+    "equipment:view",
+    "equipment:fuel:log",
+    "documents:view",
+    "reports:view",
+    "reports:generate",
+    "reports:export",
+    "alerts:view",
+    "alerts:manage",
+    "integrations:view",
+    "integrations:manage",
+    "ai:view",
+  ],
+
+  ACCOUNTANT: [
+    "projects:view",
+    "materials:view",
+    "materials:po:create",
+    "finance:view",
+    "finance:expense:approve",
+    "finance:bill:create",
+    "finance:bill:verify",
+    "finance:bill:approve",
+    "finance:claim:create",
+    "finance:claim:certify",
+    "finance:payment:create",
+    "people:view",
+    "documents:view",
+    "settings:view",
+    "reports:view",
+    "reports:generate",
+    "reports:export",
+    "alerts:view",
+    "alerts:manage",
+    "integrations:view",
+    "integrations:manage",
+    "ai:view",
+  ],
+
+  HR: [
+    "people:view",
+    "people:manage",
+    "people:attendance:create",
+    "people:attendance:approve",
+    "documents:view",
+    "settings:view",
+    "reports:view",
+    "reports:export",
+    "alerts:view",
+    "alerts:manage",
+    "integrations:view",
+    "ai:view",
+  ],
+
+  EMPLOYEE: [
+    "projects:view",
+    "finance:expense:create",
+    "people:view",
+    "people:attendance:create",
+    "documents:view",
+    "reports:view",
+    "alerts:view",
+    "ai:view",
+  ],
+
+  VIEWER: [
+    "projects:view",
+    "materials:view",
+    "finance:view",
+    "people:view",
+    "equipment:view",
+    "quality:view",
+    "safety:view",
+    "documents:view",
+    "settings:view",
+    "reports:view",
+    "reports:export",
+    "alerts:view",
+    "integrations:view",
+    "ai:view",
+  ],
+};

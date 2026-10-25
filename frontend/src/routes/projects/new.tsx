@@ -4,24 +4,32 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { formatCurrency, mockStore, useMockStore } from "@/mock";
+import { formatCurrency, useMockStore, useContextualData } from "@/mock";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useCreateProject } from "@/hooks/api";
+import { useNotify } from "@/components/app-shell";
+import { useCurrentUser } from "@/auth";
 import {
+  AlertCircle,
   AlertTriangle,
   ArrowLeft,
   Building2,
   Calendar,
   CheckCircle2,
   ChevronRight,
+  FileCheck,
   FileText,
   HardHat,
   IndianRupee,
+  Loader2,
   MapPin,
-  Shield,
+  ShieldAlert,
+  Trash2,
   Upload,
   UserCheck,
+  X,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef } from "react";
 
 export const Route = createFileRoute("/projects/new")({
   head: () => ({
@@ -38,8 +46,12 @@ export const Route = createFileRoute("/projects/new")({
 
 function CreateProjectWizard() {
   const navigate = useNavigate();
-  const { companySettings, projects } = useMockStore();
-  const activeProjectsCount = projects.filter((p) => p.status === "active").length;
+  const contextual = useContextualData();
+  const createProjectMutation = useCreateProject();
+  const notify = useNotify();
+  const { user } = useCurrentUser();
+  const { companySettings } = useMockStore();
+  const activeProjectsCount = contextual.projects.filter((p) => p.status === "active").length;
   const planName = companySettings?.subscription?.planName || "Enterprise Tier";
   const maxProjects = planName.includes("Starter") ? 2 : planName.includes("Professional") ? 10 : Infinity;
   const isLimitReached = activeProjectsCount >= maxProjects;
@@ -64,6 +76,101 @@ function CreateProjectWizard() {
   const [pmName, setPmName] = useState("Rahul Menon");
   const [siteEngineer, setSiteEngineer] = useState("Vikram Shenoy");
   const [description, setDescription] = useState("");
+  const [kickoffFiles, setKickoffFiles] = useState<{ name: string; size: string; type: string }[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Error & Validation State
+  interface FieldErrors {
+    name?: string | undefined;
+    code?: string | undefined;
+    client?: string | undefined;
+    city?: string | undefined;
+    state?: string | undefined;
+    startDate?: string | undefined;
+    targetCompletion?: string | undefined;
+    budget?: string | undefined;
+  }
+
+  const [apiError, setApiError] = useState<{
+    title: string;
+    message: string;
+    statusCode?: number;
+    errorCode?: string;
+    requestId?: string;
+    invalidParams?: Array<{ name: string; reason: string }>;
+  } | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const errorBannerRef = useRef<HTMLDivElement>(null);
+
+  const validateStep = (step: number): boolean => {
+    const errors: FieldErrors = {};
+    if (step === 1 || step === 7) {
+      if (!name.trim()) errors.name = "Project Name is required.";
+      if (!code.trim()) errors.code = "Project Code is required.";
+      if (!client.trim()) errors.client = "Client / Principal Employer is required.";
+    }
+    if (step === 2 || step === 7) {
+      if (!city.trim()) errors.city = "City is required.";
+      if (!state.trim()) errors.state = "State is required.";
+    }
+    if (step === 3 || step === 7) {
+      if (!startDate) errors.startDate = "Start Date is required.";
+      if (!targetCompletion) errors.targetCompletion = "Target Completion Date is required.";
+      if (startDate && targetCompletion && new Date(startDate) > new Date(targetCompletion)) {
+        errors.targetCompletion = "Target Completion Date must be after Start Date.";
+      }
+    }
+    if (step === 4 || step === 7) {
+      const b = parseFloat(budget);
+      if (isNaN(b) || b <= 0) errors.budget = "Approved Budget must be a positive number.";
+    }
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const allowed = [".pdf", ".dwg", ".dxf", ".xlsx", ".zip", ".png", ".jpg", ".jpeg"];
+    const added: { name: string; size: string; type: string }[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      if (!f) continue;
+      const ext = "." + (f.name.split(".").pop()?.toLowerCase() || "");
+      if (!allowed.includes(ext)) {
+        notify({
+          title: "Unsupported File Format",
+          message: `File "${f.name}" format not supported. Upload PDF, DWG, DXF, XLSX, or ZIP.`,
+          type: "warning",
+        });
+        continue;
+      }
+      if (f.size > 25 * 1024 * 1024) {
+        notify({
+          title: "File Size Exceeded",
+          message: `File "${f.name}" exceeds 25 MB limit.`,
+          type: "warning",
+        });
+        continue;
+      }
+      const sizeStr =
+        f.size > 1024 * 1024
+          ? `${(f.size / (1024 * 1024)).toFixed(1)} MB`
+          : `${Math.round(f.size / 1024)} KB`;
+      added.push({ name: f.name, size: sizeStr, type: ext.toUpperCase().replace(".", "") });
+    }
+    if (added.length > 0) {
+      setKickoffFiles((prev) => [...prev, ...added]);
+      notify({
+        title: "Files Attached",
+        message: `${added.length} file(s) attached to project kickoff package.`,
+        type: "info",
+      });
+    }
+  };
+
+  const removeFile = (idx: number) => {
+    setKickoffFiles((prev) => prev.filter((_, i) => i !== idx));
+  };
 
   const steps = [
     { num: 1, label: "Basic Info", icon: Building2 },
@@ -75,59 +182,86 @@ function CreateProjectWizard() {
     { num: 7, label: "Review & Create", icon: CheckCircle2 },
   ];
 
-  const handleNext = (e: React.FormEvent) => {
+  const handleNext = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (currentStep < 7) {
-      setCurrentStep((s) => s + 1);
-    } else {
-      // Create project
-      const rawBudget = parseFloat(budget) || 10000000;
-      const newProj = mockStore.addProject({
-        name: name || "New Project",
-        code,
-        client: client || "Client Real Estate Ltd.",
-        location: `${city}`,
-        address: address || `${city} Construction Site`,
-        city,
-        state,
-        startDate: startDate || new Date().toISOString().slice(0, 10),
-        targetCompletion: targetCompletion || "2028-06-30",
-        status: "active",
-        health: "healthy",
-        budget: rawBudget,
-        actualCost: 0,
-        committedCost: rawBudget * 0.15,
-        progress: 0,
-        plannedProgress: 5,
-        manager: {
-          id: "usr-pm-new",
-          name: pmName,
-          role: "Project Manager",
-          phone: "+91 98450 99001",
-          email: `${pmName.toLowerCase().replace(/\s+/g, ".")}@dezoinfra.com`,
-        },
-        team: [
-          {
-            id: "usr-pm-new",
-            name: pmName,
-            role: "Project Manager",
-            phone: "+91 98450 99001",
-            email: "pm@dezoinfra.com",
-          },
-          {
-            id: "usr-se-new",
-            name: siteEngineer,
-            role: "Site Engineer",
-            phone: "+91 98450 99002",
-            email: "se@dezoinfra.com",
-          },
-        ],
-        siteArea,
-        builtUpArea,
-        description: description || `${projectType} construction project.`,
-      });
+    setApiError(null);
 
-      navigate({ to: `/projects/${newProj.id}` as any });
+    if (currentStep < 7) {
+      if (!validateStep(currentStep)) {
+        notify({
+          title: "Validation Incomplete",
+          message: "Please resolve the highlighted required fields before advancing.",
+          type: "warning",
+        });
+        return;
+      }
+      setFieldErrors({});
+      setCurrentStep((s) => s + 1);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      // Step 7: Final Review & Publish
+      if (!validateStep(7)) {
+        setApiError({
+          title: "Validation Error",
+          message: "Mandatory project parameters are missing or invalid. Please check previous steps.",
+        });
+        notify({
+          title: "Validation Error",
+          message: "Please complete all mandatory parameters before publishing.",
+          type: "warning",
+        });
+        errorBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+
+      const rawBudget = parseFloat(budget) || 10000000;
+      try {
+        const created = await createProjectMutation.mutateAsync({
+          name: name.trim(),
+          code: code.trim(),
+          description: description.trim() || `${projectType} construction project.`,
+          startDate: startDate || new Date().toISOString().slice(0, 10),
+          targetDate: targetCompletion || "2028-06-30",
+          totalBudget: rawBudget,
+          clientName: client.trim(),
+          location: `${city}, ${state}`,
+          city: city.trim(),
+          state: state.trim(),
+          address: address.trim() || `${city} Construction Site`,
+        });
+
+        notify({
+          title: "Project Created Successfully",
+          message: `Project "${name.trim()}" published to the active portfolio.`,
+          type: "success",
+        });
+
+        const targetId = (created as any)?.id || "proj-001";
+        navigate({ to: `/projects/${targetId}` as any });
+      } catch (err: any) {
+        const errorMsg =
+          err.message ||
+          (err.statusCode === 403
+            ? "Forbidden: User lacks required permission 'projects:create'."
+            : "Failed to create project on backend service.");
+
+        setApiError({
+          title: "Error",
+          message: errorMsg,
+          statusCode: err.statusCode,
+          errorCode: err.errorCode,
+        });
+
+        notify({
+          title: err.statusCode === 403 ? "Access Denied" : "Project Creation Failed",
+          message: errorMsg,
+          type: "error",
+        });
+
+        setTimeout(() => {
+          errorBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 50);
+      }
     }
   };
 
@@ -139,6 +273,31 @@ function CreateProjectWizard() {
         breadcrumbs={[{ label: "Projects", href: "/projects" }, { label: "New Project Wizard" }]}
       />
 
+      {/* Simple On-Screen Alert Banner */}
+      {apiError && (
+        <div
+          ref={errorBannerRef}
+          role="alert"
+          className="mb-6 flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive shadow-sm animate-in fade-in slide-in-from-top-2 duration-200"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <AlertCircle className="size-5 shrink-0 text-destructive" />
+            <p className="font-medium text-destructive leading-snug">
+              {apiError.message}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setApiError(null)}
+            className="size-7 shrink-0 text-destructive/70 hover:text-destructive hover:bg-destructive/20"
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
+      )}
+
       {isLimitReached && (
         <div className="mb-6 rounded-xl border border-warning/40 bg-warning-soft p-4 text-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -149,7 +308,7 @@ function CreateProjectWizard() {
                   Active Project Capacity Limit Reached ({activeProjectsCount} / {maxProjects} Projects)
                 </p>
                 <p className="mt-0.5 text-muted-foreground font-medium">
-                  Your current {planName} has reached its maximum quota of active construction projects. Please upgrade your subscription or archive an existing project to create new sites. (Frontend Entitlement UX Only).
+                  Your current {planName} has reached its maximum quota of active construction projects. Please upgrade your subscription or archive an existing project to create new sites.
                 </p>
               </div>
             </div>
@@ -175,7 +334,10 @@ function CreateProjectWizard() {
                 <button
                   key={step.num}
                   type="button"
-                  onClick={() => setCurrentStep(step.num)}
+                  onClick={() => {
+                    setApiError(null);
+                    setCurrentStep(step.num);
+                  }}
                   className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-xs font-medium transition-colors text-left ${
                     isCurrent
                       ? "bg-primary text-primary-foreground font-bold shadow-sm"
@@ -224,24 +386,46 @@ function CreateProjectWizard() {
 
                 <div className="grid gap-4 sm:grid-cols-2 pt-2">
                   <div className="space-y-1.5 sm:col-span-2">
-                    <Label htmlFor="projName">Project Name *</Label>
+                    <Label htmlFor="projName" className={fieldErrors.name ? "text-destructive font-bold" : ""}>
+                      Project Name *
+                    </Label>
                     <Input
                       id="projName"
                       placeholder="e.g. Zenith Commercial Hub / Palm Meadows"
                       value={name}
-                      onChange={(e) => setName(e.target.value)}
+                      onChange={(e) => {
+                        setName(e.target.value);
+                        if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: "" }));
+                      }}
+                      className={fieldErrors.name ? "border-destructive focus-visible:ring-destructive" : ""}
                       required
                     />
+                    {fieldErrors.name && (
+                      <p className="text-xs text-destructive font-medium flex items-center gap-1 mt-1">
+                        <AlertCircle className="size-3.5" /> {fieldErrors.name}
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="projCode">Project Code / Job Number</Label>
+                    <Label htmlFor="projCode" className={fieldErrors.code ? "text-destructive font-bold" : ""}>
+                      Project Code / Job Number *
+                    </Label>
                     <Input
                       id="projCode"
                       value={code}
-                      onChange={(e) => setCode(e.target.value)}
+                      onChange={(e) => {
+                        setCode(e.target.value);
+                        if (fieldErrors.code) setFieldErrors((prev) => ({ ...prev, code: "" }));
+                      }}
+                      className={fieldErrors.code ? "border-destructive focus-visible:ring-destructive font-mono" : "font-mono"}
                       required
                     />
+                    {fieldErrors.code && (
+                      <p className="text-xs text-destructive font-medium flex items-center gap-1 mt-1">
+                        <AlertCircle className="size-3.5" /> {fieldErrors.code}
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-1.5">
@@ -261,14 +445,25 @@ function CreateProjectWizard() {
                   </div>
 
                   <div className="space-y-1.5 sm:col-span-2">
-                    <Label htmlFor="clientName">Client / Principal Employer *</Label>
+                    <Label htmlFor="clientName" className={fieldErrors.client ? "text-destructive font-bold" : ""}>
+                      Client / Principal Employer *
+                    </Label>
                     <Input
                       id="clientName"
                       placeholder="e.g. Prestige Estates / Godrej Properties"
                       value={client}
-                      onChange={(e) => setClient(e.target.value)}
+                      onChange={(e) => {
+                        setClient(e.target.value);
+                        if (fieldErrors.client) setFieldErrors((prev) => ({ ...prev, client: "" }));
+                      }}
+                      className={fieldErrors.client ? "border-destructive focus-visible:ring-destructive" : ""}
                       required
                     />
+                    {fieldErrors.client && (
+                      <p className="text-xs text-destructive font-medium flex items-center gap-1 mt-1">
+                        <AlertCircle className="size-3.5" /> {fieldErrors.client}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -286,7 +481,7 @@ function CreateProjectWizard() {
 
                 <div className="grid gap-4 sm:grid-cols-2 pt-2">
                   <div className="space-y-1.5 sm:col-span-2">
-                    <Label htmlFor="siteAddress">Site Address *</Label>
+                    <Label htmlFor="siteAddress">Site Address</Label>
                     <Input
                       id="siteAddress"
                       placeholder="Survey No, Main Road, Landmark"
@@ -296,23 +491,45 @@ function CreateProjectWizard() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="city">City *</Label>
+                    <Label htmlFor="city" className={fieldErrors.city ? "text-destructive font-bold" : ""}>
+                      City *
+                    </Label>
                     <Input
                       id="city"
                       value={city}
-                      onChange={(e) => setCity(e.target.value)}
+                      onChange={(e) => {
+                        setCity(e.target.value);
+                        if (fieldErrors.city) setFieldErrors((prev) => ({ ...prev, city: "" }));
+                      }}
+                      className={fieldErrors.city ? "border-destructive focus-visible:ring-destructive" : ""}
                       required
                     />
+                    {fieldErrors.city && (
+                      <p className="text-xs text-destructive font-medium flex items-center gap-1 mt-1">
+                        <AlertCircle className="size-3.5" /> {fieldErrors.city}
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="state">State *</Label>
+                    <Label htmlFor="state" className={fieldErrors.state ? "text-destructive font-bold" : ""}>
+                      State *
+                    </Label>
                     <Input
                       id="state"
                       value={state}
-                      onChange={(e) => setState(e.target.value)}
+                      onChange={(e) => {
+                        setState(e.target.value);
+                        if (fieldErrors.state) setFieldErrors((prev) => ({ ...prev, state: "" }));
+                      }}
+                      className={fieldErrors.state ? "border-destructive focus-visible:ring-destructive" : ""}
                       required
                     />
+                    {fieldErrors.state && (
+                      <p className="text-xs text-destructive font-medium flex items-center gap-1 mt-1">
+                        <AlertCircle className="size-3.5" /> {fieldErrors.state}
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-1.5">
@@ -350,25 +567,47 @@ function CreateProjectWizard() {
 
                 <div className="grid gap-4 sm:grid-cols-2 pt-2">
                   <div className="space-y-1.5">
-                    <Label htmlFor="startDate">Mobilization / Start Date *</Label>
+                    <Label htmlFor="startDate" className={fieldErrors.startDate ? "text-destructive font-bold" : ""}>
+                      Mobilization / Start Date *
+                    </Label>
                     <Input
                       id="startDate"
                       type="date"
                       value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
+                      onChange={(e) => {
+                        setStartDate(e.target.value);
+                        if (fieldErrors.startDate) setFieldErrors((prev) => ({ ...prev, startDate: "" }));
+                      }}
+                      className={fieldErrors.startDate ? "border-destructive focus-visible:ring-destructive" : ""}
                       required
                     />
+                    {fieldErrors.startDate && (
+                      <p className="text-xs text-destructive font-medium flex items-center gap-1 mt-1">
+                        <AlertCircle className="size-3.5" /> {fieldErrors.startDate}
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="targetDate">Target Completion Date *</Label>
+                    <Label htmlFor="targetDate" className={fieldErrors.targetCompletion ? "text-destructive font-bold" : ""}>
+                      Target Completion Date *
+                    </Label>
                     <Input
                       id="targetDate"
                       type="date"
                       value={targetCompletion}
-                      onChange={(e) => setTargetCompletion(e.target.value)}
+                      onChange={(e) => {
+                        setTargetCompletion(e.target.value);
+                        if (fieldErrors.targetCompletion) setFieldErrors((prev) => ({ ...prev, targetCompletion: "" }));
+                      }}
+                      className={fieldErrors.targetCompletion ? "border-destructive focus-visible:ring-destructive" : ""}
                       required
                     />
+                    {fieldErrors.targetCompletion && (
+                      <p className="text-xs text-destructive font-medium flex items-center gap-1 mt-1">
+                        <AlertCircle className="size-3.5" /> {fieldErrors.targetCompletion}
+                      </p>
+                    )}
                   </div>
 
                   <div className="sm:col-span-2 rounded-lg border bg-muted/30 p-4 text-xs space-y-2">
@@ -399,7 +638,9 @@ function CreateProjectWizard() {
 
                 <div className="grid gap-4 sm:grid-cols-2 pt-2">
                   <div className="space-y-1.5 sm:col-span-2">
-                    <Label htmlFor="budget">Approved Contract Budget (INR) *</Label>
+                    <Label htmlFor="budget" className={fieldErrors.budget ? "text-destructive font-bold" : ""}>
+                      Approved Contract Budget (INR) *
+                    </Label>
                     <div className="relative">
                       <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                       <Input
@@ -407,11 +648,19 @@ function CreateProjectWizard() {
                         type="number"
                         placeholder="e.g. 280000000"
                         value={budget}
-                        onChange={(e) => setBudget(e.target.value)}
-                        className="pl-9 font-mono font-bold text-base"
+                        onChange={(e) => {
+                          setBudget(e.target.value);
+                          if (fieldErrors.budget) setFieldErrors((prev) => ({ ...prev, budget: "" }));
+                        }}
+                        className={`pl-9 font-mono font-bold text-base ${fieldErrors.budget ? "border-destructive focus-visible:ring-destructive" : ""}`}
                         required
                       />
                     </div>
+                    {fieldErrors.budget && (
+                      <p className="text-xs text-destructive font-medium flex items-center gap-1 mt-1">
+                        <AlertCircle className="size-3.5" /> {fieldErrors.budget}
+                      </p>
+                    )}
                     <p className="text-xs font-medium text-primary mt-1">
                       Formatted: {formatCurrency(parseFloat(budget) || 0)}
                     </p>
@@ -515,7 +764,28 @@ function CreateProjectWizard() {
                   </p>
                 </div>
 
-                <div className="rounded-lg border-2 border-dashed bg-muted/20 p-8 text-center">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  multiple
+                  accept=".pdf,.dwg,.dxf,.xlsx,.zip,.png,.jpg,.jpeg"
+                  className="hidden"
+                  onChange={(e) => handleFiles(e.target.files)}
+                />
+
+                <div
+                  className="rounded-lg border-2 border-dashed bg-muted/20 p-8 text-center hover:bg-muted/30 transition-colors cursor-pointer"
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleFiles(e.dataTransfer.files);
+                  }}
+                  onClick={() => fileInputRef.current?.click()}
+                >
                   <div className="grid size-12 mx-auto place-items-center rounded-full bg-primary/10 text-primary">
                     <Upload className="size-6" />
                   </div>
@@ -524,10 +794,62 @@ function CreateProjectWizard() {
                     Drag and drop Contract Agreement (PDF), Structural Drawings (DWG/PDF), or Soil
                     Reports.
                   </p>
-                  <Button type="button" variant="outline" size="sm" className="mt-4 gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-4 gap-2 cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      fileInputRef.current?.click();
+                    }}
+                  >
                     <FileText className="size-4" /> Browse Files
                   </Button>
                 </div>
+
+                {kickoffFiles.length > 0 && (
+                  <div className="rounded-lg border border-border/80 bg-card p-4 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-foreground">
+                        Attached Kickoff Documents ({kickoffFiles.length})
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-[11px] text-muted-foreground hover:text-destructive"
+                        onClick={() => setKickoffFiles([])}
+                      >
+                        Clear All
+                      </Button>
+                    </div>
+                    <div className="divide-y divide-border/60 text-xs">
+                      {kickoffFiles.map((file, idx) => (
+                        <div key={idx} className="py-2 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <FileCheck className="size-4 text-emerald-500 shrink-0" />
+                            <div>
+                              <p className="font-semibold text-foreground">{file.name}</p>
+                              <p className="text-[10px] text-muted-foreground">
+                                Format: {file.type} · Size: {file.size}
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-7 text-muted-foreground hover:text-destructive"
+                            onClick={() => removeFile(idx)}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -583,6 +905,14 @@ function CreateProjectWizard() {
                       <span className="text-muted-foreground">Site Engineer</span>
                       <p className="font-semibold text-foreground">{siteEngineer}</p>
                     </div>
+                    <div className="col-span-2 border-t pt-3">
+                      <span className="text-muted-foreground">Attached Kickoff Documents</span>
+                      <p className="font-semibold text-foreground mt-0.5">
+                        {kickoffFiles.length > 0
+                          ? `${kickoffFiles.length} file(s) attached (${kickoffFiles.map((f) => f.name).join(", ")})`
+                          : "No initial documents attached (optional)"}
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -595,8 +925,12 @@ function CreateProjectWizard() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => setCurrentStep((s) => s - 1)}
-                  className="gap-1.5"
+                  onClick={() => {
+                    setApiError(null);
+                    setCurrentStep((s) => s - 1);
+                  }}
+                  disabled={createProjectMutation.isPending}
+                  className="gap-1.5 cursor-pointer"
                 >
                   <ArrowLeft className="size-4" /> Previous
                 </Button>
@@ -606,9 +940,32 @@ function CreateProjectWizard() {
                 </Button>
               )}
 
-              <Button type="submit" size="sm" className="gap-1.5 font-semibold">
-                {currentStep === 7 ? "Publish & Create Project" : "Next Step"}
-                {currentStep < 7 && <ChevronRight className="size-4" />}
+              <Button
+                type="submit"
+                size="sm"
+                disabled={createProjectMutation.isPending || isLimitReached}
+                className={`gap-1.5 font-semibold cursor-pointer ${
+                  currentStep === 7
+                    ? "bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
+                    : ""
+                }`}
+              >
+                {createProjectMutation.isPending ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    <span>Publishing Project...</span>
+                  </>
+                ) : currentStep === 7 ? (
+                  <>
+                    <CheckCircle2 className="size-4" />
+                    <span>Publish & Create Project</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Next Step</span>
+                    <ChevronRight className="size-4" />
+                  </>
+                )}
               </Button>
             </div>
           </form>

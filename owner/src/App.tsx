@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { OwnerShell } from "./components/owner-shell";
+import { OwnerLogin, sanitizeOwnerRedirect } from "./components/owner-login";
+import { PlatformAuthProvider, usePlatformAuth } from "./auth";
+import { HardHat, Loader2 } from "lucide-react";
+
+// Platform Governance Views
 import { OverviewView } from "./routes/overview";
 import { TenantsView } from "./routes/tenants";
 import { SubscriptionsView } from "./routes/subscriptions";
@@ -12,27 +17,59 @@ import { AuditView } from "./routes/audit";
 import { SupportView } from "./routes/support";
 import { SettingsView } from "./routes/settings";
 
-export function App() {
+function OwnerLoadingScreen() {
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground">
+      <div className="flex flex-col items-center gap-4 animate-in fade-in duration-300">
+        <div className="grid size-12 place-items-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+          <HardHat className="size-7" />
+        </div>
+        <div className="text-center space-y-1">
+          <h2 className="text-lg font-extrabold tracking-tight">
+            DEZO<span className="text-primary">BUILD</span>
+          </h2>
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Verifying Platform Session…
+          </p>
+        </div>
+        <Loader2 className="size-5 animate-spin text-primary mt-2" />
+      </div>
+    </div>
+  );
+}
+
+function OwnerAppContent() {
+  const { isAuthenticated, isLoading } = usePlatformAuth();
+
   const [activeTab, setActiveTab] = useState<string>(() => {
     const hash = window.location.hash.replace("#", "");
-    return hash || "overview";
+    return sanitizeOwnerRedirect(hash);
   });
 
   const handleTabChange = (tabId: string) => {
-    setActiveTab(tabId);
-    window.location.hash = tabId;
+    const sanitized = sanitizeOwnerRedirect(tabId);
+    setActiveTab(sanitized);
+    window.location.hash = sanitized;
   };
 
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace("#", "");
       if (hash) {
-        setActiveTab(hash);
+        setActiveTab(sanitizeOwnerRedirect(hash));
       }
     };
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
+
+  if (isLoading) {
+    return <OwnerLoadingScreen />;
+  }
+
+  if (!isAuthenticated) {
+    return <OwnerLogin onSuccessRedirect={handleTabChange} />;
+  }
 
   const renderActiveView = () => {
     switch (activeTab) {
@@ -41,7 +78,7 @@ export function App() {
       case "tenants":
         return <TenantsView />;
       case "subscriptions":
-        return <SubscriptionsView />;
+        return <SubscriptionsView onNavigate={handleTabChange} />;
       case "billing":
         return <BillingView />;
       case "users":
@@ -67,6 +104,14 @@ export function App() {
     <OwnerShell activeTab={activeTab} onTabChange={handleTabChange}>
       {renderActiveView()}
     </OwnerShell>
+  );
+}
+
+export function App() {
+  return (
+    <PlatformAuthProvider>
+      <OwnerAppContent />
+    </PlatformAuthProvider>
   );
 }
 

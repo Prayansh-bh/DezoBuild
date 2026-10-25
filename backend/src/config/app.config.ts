@@ -30,10 +30,15 @@ export interface AppConfig {
     format: "json" | "pretty";
   };
   security: {
-    jwtAccessSecret?: string | undefined;
-    jwtRefreshSecret?: string | undefined;
+    jwtAccessSecret: string;
+    jwtRefreshSecret: string;
+    accessExpiresInSec: number;
+    refreshExpiresInDays: number;
+    bcryptSaltRounds: number;
     cookieDomain?: string | undefined;
     secureCookies: boolean;
+    platformAdminEmail: string;
+    platformAdminPassword: string;
   };
   storage: {
     provider: "s3" | "r2" | "minio" | "local";
@@ -97,8 +102,13 @@ export function loadAndValidateConfig(envSource: Record<string, unknown> = proce
     security: {
       jwtAccessSecret: env.JWT_ACCESS_SECRET,
       jwtRefreshSecret: env.JWT_REFRESH_SECRET,
+      accessExpiresInSec: env.JWT_ACCESS_EXPIRES_IN_SEC,
+      refreshExpiresInDays: env.JWT_REFRESH_EXPIRES_IN_DAYS,
+      bcryptSaltRounds: env.BCRYPT_SALT_ROUNDS,
       cookieDomain: env.COOKIE_DOMAIN,
       secureCookies: env.SECURE_COOKIES ?? env.NODE_ENV === "production",
+      platformAdminEmail: env.PLATFORM_ADMIN_EMAIL,
+      platformAdminPassword: env.PLATFORM_ADMIN_PASSWORD,
     },
     storage: {
       provider: env.STORAGE_PROVIDER,

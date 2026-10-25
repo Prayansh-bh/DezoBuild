@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import {
+  AlertCircle,
   CheckCircle2,
   KeyRound,
   Lock,
@@ -8,6 +9,7 @@ import {
   ShieldCheck,
   UserCheck,
   Users,
+  X,
 } from "lucide-react";
 import { PageHeader } from "../components/shared/page-header";
 import { StatusBadge } from "../components/shared/status-badge";
@@ -16,25 +18,14 @@ import { MOCK_GLOBAL_USERS } from "../mock/platform-data";
 import type { PlatformGlobalUser } from "../types";
 
 export function UsersView() {
-  const [users, setUsers] = useState<PlatformGlobalUser[]>(MOCK_GLOBAL_USERS);
+  const users = MOCK_GLOBAL_USERS;
   const [search, setSearch] = useState("");
-  const [toastMessage, setToastMessage] = useState("");
+  const [mfaDialogOpen, setMfaDialogOpen] = useState(false);
+  const [userActionNotice, setUserActionNotice] = useState<string | null>(null);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(""), 3000);
-  };
-
-  const handleToggleStatus = (userId: string) => {
-    setUsers(
-      users.map((u) => {
-        if (u.id === userId) {
-          const newStatus = u.status === "active" ? "suspended" : "active";
-          showToast(`Updated user ${u.email} to ${newStatus}`);
-          return { ...u, status: newStatus };
-        }
-        return u;
-      })
+  const handleToggleStatus = (user: PlatformGlobalUser) => {
+    setUserActionNotice(
+      `Global user mutation for "${user.email}" requires tenant-level administrative session. Platform Owner cannot directly mutate tenant users without tenant delegation.`
     );
   };
 
@@ -47,14 +38,6 @@ export function UsersView() {
 
   return (
     <div className="space-y-6">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed top-20 right-6 z-50 rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white shadow-float flex items-center gap-2">
-          <CheckCircle2 className="size-4" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
-
       {/* Page Header */}
       <PageHeader
         eyebrow="Identity & Seat Allocation"
@@ -62,7 +45,7 @@ export function UsersView() {
         subtitle="Tenant user directory, MFA posture enforcement, SSO integrations, and seat allocation quotas."
         actions={
           <button
-            onClick={() => showToast("MFA Policy enforced across all Enterprise tenants")}
+            onClick={() => setMfaDialogOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3.5 py-2 text-xs font-semibold text-foreground transition-all hover:bg-muted shadow-panel cursor-pointer"
           >
             <Lock className="size-3.5 text-amber-500" />
@@ -70,6 +53,90 @@ export function UsersView() {
           </button>
         }
       />
+
+      {/* MFA Policy Dialog */}
+      {mfaDialogOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setMfaDialogOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-float space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2 text-base font-bold text-foreground">
+                <Lock className="size-4.5 text-amber-500" />
+                <span>Enterprise MFA Enforcement</span>
+              </div>
+              <button
+                onClick={() => setMfaDialogOpen(false)}
+                className="rounded p-1 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300">
+              <div className="font-bold flex items-center gap-1.5">
+                <AlertCircle className="size-3.5 shrink-0" />
+                <span>Enterprise MFA Policy Endpoint Not Configured</span>
+              </div>
+              <p className="mt-1 text-[11px] text-amber-800/90 dark:text-amber-300/90 leading-relaxed">
+                Global root MFA policy push is not enabled in this cluster. Tenant organizations independently enforce MFA policies from their respective Company Administration settings.
+              </p>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setMfaDialogOpen(false)}
+                className="h-9 px-4 rounded-lg bg-primary text-primary-foreground font-semibold text-xs cursor-pointer"
+              >
+                Acknowledge
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* User Action Notice Dialog */}
+      {userActionNotice && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setUserActionNotice(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-float space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2 text-base font-bold text-foreground">
+                <AlertCircle className="size-4.5 text-primary" />
+                <span>Tenant Isolation Policy Notice</span>
+              </div>
+              <button
+                onClick={() => setUserActionNotice(null)}
+                className="rounded p-1 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {userActionNotice}
+            </p>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setUserActionNotice(null)}
+                className="h-9 px-4 rounded-lg bg-primary text-primary-foreground font-semibold text-xs cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Search Input */}
       <div className="relative max-w-md">
@@ -131,7 +198,7 @@ export function UsersView() {
                     <td className="p-3.5 text-muted-foreground tabular-nums">{u.lastActive}</td>
                     <td className="p-3.5 text-right">
                       <button
-                        onClick={() => handleToggleStatus(u.id)}
+                        onClick={() => handleToggleStatus(u)}
                         className={`px-2.5 py-1 rounded text-[11px] font-semibold cursor-pointer transition-colors ${
                           u.status === "active"
                             ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 border border-rose-500/30"

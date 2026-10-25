@@ -1,0 +1,46 @@
+export const OutboxEventStatus = {
+  PENDING: 'PENDING',
+  PROCESSING: 'PROCESSING',
+  PROCESSED: 'PROCESSED',
+  FAILED: 'FAILED',
+} as const;
+
+export type OutboxEventStatus = (typeof OutboxEventStatus)[keyof typeof OutboxEventStatus];
+
+export const DomainEventType = {
+  // Projects & DPR
+  PROJECT_MILESTONE_DELAYED: 'PROJECT_MILESTONE_DELAYED',
+  DPR_DELAYED: 'DPR_DELAYED',
+
+  // Materials & Stock
+  MATERIAL_LOW_STOCK: 'MATERIAL_LOW_STOCK',
+  MATERIAL_OVERCONSUMED: 'MATERIAL_OVERCONSUMED',
+
+  // Finance & Commercial
+  PAYMENT_OVERDUE: 'PAYMENT_OVERDUE',
+  BUDGET_EXCEEDED: 'BUDGET_EXCEEDED',
+
+  // People & Attendance
+  ATTENDANCE_ANOMALY: 'ATTENDANCE_ANOMALY',
+
+  // Equipment & Maintenance
+  EQUIPMENT_BREAKDOWN: 'EQUIPMENT_BREAKDOWN',
+  MAINTENANCE_DUE: 'MAINTENANCE_DUE',
+
+  // Quality & Safety
+  NCR_RAISED: 'NCR_RAISED',
+  SAFETY_INCIDENT_CRITICAL: 'SAFETY_INCIDENT_CRITICAL',
+
+  // Documents & RFI
+  RFI_OVERDUE: 'RFI_OVERDUE',
+
+  // Approval Engine (Phase 15 integration)
+  APPROVAL_SUBMITTED: 'APPROVAL_SUBMITTED',
+  APPROVAL_STEP_PENDING: 'APPROVAL_STEP_PENDING',
+  APPROVAL_APPROVED: 'APPROVAL_APPROVED',
+  APPROVAL_REJECTED: 'APPROVAL_REJECTED',
+  APPROVAL_RETURNED: 'APPROVAL_RETURNED',
+  APPROVAL_CANCELLED: 'APPROVAL_CANCELLED',
+} as const;
+
+export type DomainEventType = (typeof DomainEventType)[keyof typeof DomainEventType];

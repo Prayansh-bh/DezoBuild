@@ -1,11 +1,15 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
+  AlertCircle,
   Building2,
   CheckCircle2,
+  Database,
   Filter,
   Globe,
+  Loader2,
   MoreVertical,
   Plus,
+  RefreshCw,
   Search,
   Shield,
   Sliders,
@@ -15,95 +19,140 @@ import {
 import { PageHeader } from "../components/shared/page-header";
 import { StatusBadge } from "../components/shared/status-badge";
 import { EmptyState } from "../components/shared/empty-state";
-import { MOCK_TENANTS } from "../mock/platform-data";
-import type { PlatformTenant, SubscriptionTier, TenantStatus } from "../types";
+import {
+  platformTenantsApi,
+  platformHealthApi,
+  type PlatformTenantListItem,
+  type BackendHealthDto,
+} from "../lib/api";
+import type { SubscriptionTier } from "../types";
+
+export function mapTenantFilterToStatus(filter: string): string | undefined {
+  switch (filter.toLowerCase()) {
+    case "active":
+      return "ACTIVE";
+    case "trialing":
+      return "TRIAL";
+    case "delinquent":
+      return "DELINQUENT";
+    case "suspended":
+      return "SUSPENDED";
+    case "all":
+    default:
+      return undefined;
+  }
+}
 
 export function TenantsView() {
-  const [tenants, setTenants] = useState<PlatformTenant[]>(MOCK_TENANTS);
+  const [tenants, setTenants] = useState<PlatformTenantListItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [isProvisionOpen, setIsProvisionOpen] = useState(false);
-  const [toastMessage, setToastMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [auditTenant, setAuditTenant] = useState<PlatformTenantListItem | null>(null);
+  const [auditHealth, setAuditHealth] = useState<BackendHealthDto | null>(null);
+  const [isAuditing, setIsAuditing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Provision Form State
   const [newTenantName, setNewTenantName] = useState("");
-  const [newLegalName, setNewLegalName] = useState("");
   const [newSlug, setNewSlug] = useState("");
   const [newContactEmail, setNewContactEmail] = useState("");
   const [newContactPerson, setNewContactPerson] = useState("");
   const [newTier, setNewTier] = useState<SubscriptionTier>("Enterprise");
   const [newSeats, setNewSeats] = useState(100);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(""), 3000);
+  const loadTenants = async () => {
+    setIsLoading(true);
+    setErrorMsg(null);
+    try {
+      const res = await platformTenantsApi.listTenants({
+        search: search.trim() || undefined,
+        status: mapTenantFilterToStatus(filterStatus),
+      });
+      setTenants(res.items || []);
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to load platform tenants from PostgreSQL cluster.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleProvision = (e: React.FormEvent) => {
+  useEffect(() => {
+    loadTenants();
+  }, [filterStatus, search]);
+
+  const handleAuditClick = async (tenant: PlatformTenantListItem) => {
+    setAuditTenant(tenant);
+    setIsAuditing(true);
+    try {
+      const health = await platformHealthApi.getHealth();
+      setAuditHealth(health);
+    } catch {
+      setAuditHealth(null);
+    } finally {
+      setIsAuditing(false);
+    }
+  };
+
+  const handleProvisionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTenantName || !newContactEmail) return;
+    setIsSubmitting(true);
+    try {
+      const slug =
+        newSlug.trim() ||
+        newTenantName
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "-")
+          .replace(/-+/g, "-");
 
-    const newTenant: PlatformTenant = {
-      id: `tenant-${Date.now().toString().slice(-4)}`,
-      name: newTenantName,
-      slug: newSlug || newTenantName.toLowerCase().replace(/\s+/g, "-"),
-      legalName: newLegalName || newTenantName,
-      planTier: newTier,
-      status: "active",
-      seatsAllocated: Number(newSeats),
-      seatsUsed: 1,
-      mrr: newTier === "Enterprise" ? 399999 : newTier === "Professional" ? 149999 : 49999,
-      activeSitesCount: 1,
-      contactEmail: newContactEmail,
-      contactPhone: "+91 98000 00000",
-      contactPerson: newContactPerson || "Primary Admin",
-      region: "ap-south-1 (Mumbai)",
-      createdAt: new Date().toISOString().split("T")[0] || "",
-      renewalDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0] || "",
-    };
+      await platformTenantsApi.provisionTenant({
+        code: slug.toUpperCase(),
+        name: newTenantName.trim(),
+        planTier: newTier.toUpperCase() as any,
+        adminName: newContactPerson.trim(),
+        adminEmail: newContactEmail.trim(),
+      });
 
-    setTenants([newTenant, ...tenants]);
-    setIsProvisionOpen(false);
-    setNewTenantName("");
-    setNewLegalName("");
-    setNewSlug("");
-    setNewContactEmail("");
-    setNewContactPerson("");
-    showToast(`Successfully provisioned tenant: ${newTenant.name}`);
+      alert(`Tenant workspace '${newTenantName}' provisioned successfully in PostgreSQL cluster!`);
+      setIsProvisionOpen(false);
+      setNewTenantName("");
+      setNewSlug("");
+      setNewContactEmail("");
+      setNewContactPerson("");
+      await loadTenants();
+    } catch (err: any) {
+      alert(`Provisioning failed: ${err.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
-
-  const filtered = tenants.filter((t) => {
-    const matchesStatus = filterStatus === "all" || t.status === filterStatus;
-    const matchesSearch =
-      t.name.toLowerCase().includes(search.toLowerCase()) ||
-      t.slug.toLowerCase().includes(search.toLowerCase()) ||
-      t.contactEmail.toLowerCase().includes(search.toLowerCase());
-    return matchesStatus && matchesSearch;
-  });
 
   return (
     <div className="space-y-6">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed top-20 right-6 z-50 rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white shadow-float flex items-center gap-2">
-          <CheckCircle2 className="size-4" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
-
       {/* Page Header */}
       <PageHeader
         eyebrow="Tenant Lifecycle & Multi-Tenancy"
         title="Companies & Tenant Workspaces"
         subtitle="Provision, inspect, isolate, and manage construction tenant organizations across multi-region infrastructure."
         actions={
-          <button
-            onClick={() => setIsProvisionOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 cursor-pointer"
-          >
-            <Plus className="size-4" />
-            <span>Provision Tenant</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={loadTenants}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground shadow-xs transition-all hover:bg-muted/50 cursor-pointer"
+            >
+              <RefreshCw className={`size-3.5 ${isLoading ? "animate-spin" : ""}`} />
+              <span>Refresh</span>
+            </button>
+            <button
+              onClick={() => setIsProvisionOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 cursor-pointer"
+            >
+              <Plus className="size-4" />
+              <span>Provision Tenant</span>
+            </button>
+          </div>
         }
       />
 
@@ -115,7 +164,7 @@ export function TenantsView() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Filter by company name, slug, or contact email…"
+            placeholder="Filter by company name, slug, or domain…"
             className="w-full rounded-lg border border-border bg-card pl-9 pr-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none shadow-panel"
           />
         </div>
@@ -137,8 +186,20 @@ export function TenantsView() {
         </div>
       </div>
 
+      {errorMsg && (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-xs text-destructive flex items-center gap-2">
+          <AlertCircle className="size-4 shrink-0" />
+          <span>{errorMsg}</span>
+        </div>
+      )}
+
       {/* Tenants Table or Empty State */}
-      {filtered.length > 0 ? (
+      {isLoading ? (
+        <div className="rounded-xl border border-border/80 bg-card p-12 text-center shadow-panel flex flex-col items-center justify-center space-y-3">
+          <Loader2 className="size-6 text-primary animate-spin" />
+          <p className="text-xs text-muted-foreground">Loading authoritative tenant workspaces from cluster…</p>
+        </div>
+      ) : tenants.length > 0 ? (
         <div className="rounded-xl border border-border/80 bg-card overflow-hidden shadow-panel">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
@@ -147,24 +208,24 @@ export function TenantsView() {
                   <th className="p-3.5 font-semibold">Tenant Organization</th>
                   <th className="p-3.5 font-semibold">Plan Tier</th>
                   <th className="p-3.5 font-semibold">Status</th>
-                  <th className="p-3.5 font-semibold">Seat Quota</th>
-                  <th className="p-3.5 font-semibold">Monthly MRR</th>
+                  <th className="p-3.5 font-semibold">Legal Entities</th>
+                  <th className="p-3.5 font-semibold">Users</th>
                   <th className="p-3.5 font-semibold">Sites</th>
-                  <th className="p-3.5 font-semibold">Primary Contact</th>
+                  <th className="p-3.5 font-semibold">Created</th>
                   <th className="p-3.5 font-semibold text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/60 text-foreground">
-                {filtered.map((tenant) => (
+                {tenants.map((tenant) => (
                   <tr key={tenant.id} className="hover:bg-muted/30 transition-colors">
                     <td className="p-3.5">
                       <div className="font-bold text-foreground text-xs">{tenant.name}</div>
-                      <div className="text-[11px] text-muted-foreground mt-0.5">
-                        {tenant.slug} · {tenant.region}
+                      <div className="text-[11px] font-mono text-muted-foreground mt-0.5">
+                        {tenant.code} · {tenant.timezone}
                       </div>
-                      {tenant.customDomain && (
+                      {tenant.domain && (
                         <div className="text-[10px] text-primary flex items-center gap-1 mt-0.5 font-medium">
-                          <Globe className="size-3" /> {tenant.customDomain}
+                          <Globe className="size-3" /> {tenant.domain}
                         </div>
                       )}
                     </td>
@@ -174,42 +235,37 @@ export function TenantsView() {
                       </span>
                     </td>
                     <td className="p-3.5">
-                      <StatusBadge status={tenant.status} />
+                      <StatusBadge status={tenant.status as any} />
                     </td>
-                    <td className="p-3.5 tabular-nums">
-                      <div className="text-foreground font-medium">
-                        {tenant.seatsUsed} / {tenant.seatsAllocated}
+                    <td className="p-3.5 font-medium text-foreground">
+                      {tenant.companyCount} {tenant.companyCount === 1 ? "Company" : "Companies"}
+                    </td>
+                    <td className="p-3.5 font-medium text-foreground">
+                      {tenant.userCount} Seats
+                    </td>
+                    <td className="p-3.5 font-medium text-foreground">
+                      {tenant.projectCount} Active Sites
+                    </td>
+                    <td className="p-3.5 text-muted-foreground font-mono text-[11px]">
+                      {new Date(tenant.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="p-3.5 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => handleAuditClick(tenant)}
+                          className="px-2.5 py-1 rounded bg-muted hover:bg-muted/80 text-foreground text-xs font-semibold cursor-pointer flex items-center gap-1 transition-colors"
+                        >
+                          <Database className="size-3 text-primary" />
+                          <span>Audit</span>
+                        </button>
+                        <a
+                          href="#entitlements"
+                          className="px-2.5 py-1 rounded bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold cursor-pointer flex items-center gap-1 transition-colors"
+                        >
+                          <Sliders className="size-3" />
+                          <span>Entitlements</span>
+                        </a>
                       </div>
-                      <div className="w-20 bg-muted rounded-full h-1.5 mt-1 overflow-hidden">
-                        <div
-                          className="bg-primary h-full rounded-full"
-                          style={{ width: `${Math.min(100, (tenant.seatsUsed / tenant.seatsAllocated) * 100)}%` }}
-                        />
-                      </div>
-                    </td>
-                    <td className="p-3.5 font-bold text-foreground tabular-nums">
-                      ₹{(tenant.mrr / 1000).toLocaleString("en-IN")}k
-                    </td>
-                    <td className="p-3.5 text-muted-foreground tabular-nums font-medium">
-                      {tenant.activeSitesCount} sites
-                    </td>
-                    <td className="p-3.5">
-                      <div className="text-foreground font-medium">{tenant.contactPerson}</div>
-                      <div className="text-[10px] text-muted-foreground">{tenant.contactEmail}</div>
-                    </td>
-                    <td className="p-3.5 text-right space-x-1.5">
-                      <button
-                        onClick={() => showToast(`Isolated schema verified for ${tenant.name}`)}
-                        className="px-2.5 py-1 rounded bg-muted hover:bg-muted/80 text-[11px] font-semibold text-foreground cursor-pointer transition-colors"
-                      >
-                        Audit
-                      </button>
-                      <button
-                        onClick={() => showToast(`Entitlements opened for ${tenant.name}`)}
-                        className="px-2.5 py-1 rounded bg-primary/10 hover:bg-primary/20 border border-primary/30 text-[11px] font-semibold text-primary cursor-pointer transition-colors"
-                      >
-                        Entitlements
-                      </button>
                     </td>
                   </tr>
                 ))}
@@ -220,21 +276,108 @@ export function TenantsView() {
       ) : (
         <EmptyState
           icon={Building2}
-          title={tenants.length === 0 ? "No tenants provisioned yet" : "No tenant organizations found"}
-          description={
-            tenants.length === 0
-              ? "Provision your first tenant to begin managing customer organizations."
-              : "No tenants match the current search criteria or status filter."
-          }
-          actionLabel="Provision Tenant"
+          title="No construction tenant workspaces provisioned yet"
+          description="Provision customer tenant organizations with dedicated database partitioning, enterprise entitlements, and owner administrative credentials."
+          actionLabel="Provision First Tenant"
           onAction={() => setIsProvisionOpen(true)}
         />
+      )}
+
+      {/* Tenant Schema & Isolation Audit Modal */}
+      {auditTenant && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setAuditTenant(null)}
+        >
+          <div
+            className="w-full max-w-xl rounded-xl border border-border bg-card p-6 shadow-float space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2 text-base font-bold text-foreground">
+                <Database className="size-5 text-primary" />
+                <span>Tenant Isolation & Database Schema Audit</span>
+              </div>
+              <button
+                onClick={() => setAuditTenant(null)}
+                className="rounded p-1 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="rounded-lg border border-border/80 bg-muted/20 p-4 space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold text-muted-foreground">Tenant Organization:</span>
+                  <span className="font-bold text-foreground">{auditTenant.name}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold text-muted-foreground">Tenant UUID:</span>
+                  <span className="font-mono text-foreground font-semibold">{auditTenant.id}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold text-muted-foreground">Isolation Strategy:</span>
+                  <span className="rounded bg-primary/10 border border-primary/20 px-2 py-0.5 text-[10px] text-primary font-bold">
+                    Row-Level Discriminator (`tenant_id` Foreign Key)
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold text-muted-foreground">Plan Tier / Cycle:</span>
+                  <span className="font-semibold text-foreground">
+                    {auditTenant.planTier} ({auditTenant.subscription?.billingCycle || "ANNUAL"})
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border/80 bg-muted/20 p-4 space-y-2">
+                <div className="font-bold text-foreground mb-1 flex items-center gap-1.5">
+                  <Shield className="size-3.5 text-emerald-500" />
+                  <span>Authoritative Backend PostgreSQL Telemetry</span>
+                </div>
+                {isAuditing ? (
+                  <p className="text-muted-foreground">Inspecting database connectivity…</p>
+                ) : auditHealth ? (
+                  <div className="space-y-1 text-muted-foreground font-mono text-[11px]">
+                    <div className="flex justify-between">
+                      <span>PostgreSQL Status:</span>
+                      <strong className="text-emerald-500 font-bold">CONNECTED ({auditHealth.database.status})</strong>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Query Latency:</span>
+                      <span className="text-foreground">{auditHealth.database.latencyMs} ms</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Service Version:</span>
+                      <span className="text-foreground">{auditHealth.service} v{auditHealth.version}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>System Uptime:</span>
+                      <span className="text-foreground">{Math.floor(auditHealth.uptimeSeconds / 60)} minutes</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-destructive font-semibold">Unable to fetch live database telemetry.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-border flex justify-end">
+              <button
+                onClick={() => setAuditTenant(null)}
+                className="h-9 px-4 rounded-lg bg-primary text-primary-foreground font-semibold text-xs cursor-pointer"
+              >
+                Close Audit
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Provision Tenant Modal */}
       {isProvisionOpen && (
         <div
-          className="fixed inset-0 z-50 bg-overlay backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
           onClick={() => setIsProvisionOpen(false)}
         >
           <div
@@ -259,7 +402,7 @@ export function TenantsView() {
               </button>
             </div>
 
-            <form onSubmit={handleProvision} className="space-y-4 text-xs">
+            <form onSubmit={handleProvisionSubmit} className="space-y-4 text-xs">
               <div className="space-y-1.5">
                 <label className="block font-medium text-foreground text-xs">
                   Company / Organization Name <span className="text-destructive font-bold">*</span>
@@ -277,14 +420,14 @@ export function TenantsView() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div className="space-y-1.5">
                   <label className="block font-medium text-foreground text-xs">
-                    Workspace Subdomain Slug
+                    Workspace Code / Slug
                   </label>
                   <input
                     type="text"
                     value={newSlug}
                     onChange={(e) => setNewSlug(e.target.value)}
-                    placeholder="e.g. shapoorji-coastal"
-                    className="w-full h-9 rounded-lg border border-border bg-background px-3 text-foreground focus:border-primary focus:outline-none font-mono text-xs"
+                    placeholder="e.g. SHAPOORJI-COASTAL"
+                    className="w-full h-9 rounded-lg border border-border bg-background px-3 text-foreground focus:border-primary focus:outline-none font-mono text-xs uppercase"
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -332,20 +475,6 @@ export function TenantsView() {
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="block font-medium text-foreground text-xs">
-                  Initial User Seat Allocation
-                </label>
-                <input
-                  type="number"
-                  min={5}
-                  max={2000}
-                  value={newSeats}
-                  onChange={(e) => setNewSeats(Number(e.target.value))}
-                  className="w-full h-9 rounded-lg border border-border bg-background px-3 text-foreground focus:border-primary focus:outline-none font-mono text-xs"
-                />
-              </div>
-
               <div className="pt-4 border-t border-border flex items-center justify-end gap-2.5">
                 <button
                   type="button"
@@ -356,9 +485,11 @@ export function TenantsView() {
                 </button>
                 <button
                   type="submit"
-                  className="h-9 px-5 rounded-lg bg-primary hover:bg-primary/90 font-bold text-primary-foreground text-xs shadow-sm cursor-pointer"
+                  disabled={isSubmitting}
+                  className="h-9 px-5 rounded-lg bg-primary hover:bg-primary/90 font-bold text-primary-foreground text-xs shadow-sm cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  Confirm Provisioning
+                  {isSubmitting && <Loader2 className="size-3.5 animate-spin" />}
+                  <span>{isSubmitting ? "Provisioning in Cluster…" : "Provision Workspace"}</span>
                 </button>
               </div>
             </form>

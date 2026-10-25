@@ -58,11 +58,13 @@ import {
   calculateEquipmentUtilization,
   calculateEquipmentHourlyCost,
 } from "@/lib/calculations";
+import { downloadCsv } from "@/lib/export-utils";
+import { useCurrentUser } from "@/auth";
 
 export const Route = createFileRoute("/equipment/")({
   head: () => ({
     meta: [
-      { title: "Plant & Equipment Fleet | DEZOBUILD" },
+      { title: "Machinery & Equipment Fleet | DEZOBUILD" },
       {
         name: "description",
         content:
@@ -108,6 +110,7 @@ function EquipmentPage() {
   // Dialog States
   const [addFuelOpen, setAddFuelOpen] = useState(false);
   const [addMaintOpen, setAddMaintOpen] = useState(false);
+  const [selectedCertAsset, setSelectedCertAsset] = useState<EquipmentAsset | null>(null);
 
   // Form States - Add Fuel
   const [fuelEqId, setFuelEqId] = useState(equipment[0]?.id || "");
@@ -192,9 +195,9 @@ function EquipmentPage() {
   };
 
   return (
-    <AppShell crumb="Plant & Equipment">
+    <AppShell crumb="Machinery & Equipment">
       <PageHeader
-        title="Plant, Equipment & Fleet Operations"
+        title="Machinery & Equipment Fleet Operations"
         subtitle="Manage heavy construction machinery, daily hour-meter logs, diesel dispensing, and preventative maintenance."
         actions={
           <div className="flex items-center gap-2">
@@ -864,8 +867,8 @@ function EquipmentPage() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => notify(`Renewal request initiated for ${eq.assetCode}.`)}
-                              className="h-7 text-[11px] px-2"
+                              onClick={() => setSelectedCertAsset(eq)}
+                              className="h-7 text-[11px] px-2 cursor-pointer"
                             >
                               Renew Certificate
                             </Button>
@@ -940,8 +943,27 @@ function EquipmentPage() {
           <div className="rounded-xl border bg-card p-6 shadow-panel space-y-3 text-xs">
             <h3 className="font-bold text-sm text-foreground">Fleet ROI, Fuel Efficiency & Downtime Reports</h3>
             <p className="text-muted-foreground">Download comprehensive machinery maintenance digests and fuel consumption logs.</p>
-            <Button size="sm" onClick={() => notify("Fleet Operations Digest downloaded.")} className="gap-2 shadow-sm">
-              <Download className="size-4" /> Download Fleet Digest (PDF)
+            <Button
+              size="sm"
+              onClick={() => {
+                const headers = ["Asset Code", "Machinery Name", "Equipment Type", "Assigned Site", "Operator", "Current Hour Meter", "Hourly Rate (INR)", "Ownership", "Status"];
+                const rows = equipment.map((eq) => [
+                  eq.assetCode,
+                  eq.name,
+                  eq.type,
+                  eq.currentSite,
+                  eq.operator?.name || "Unassigned",
+                  eq.currentHourMeter,
+                  eq.hourlyRate,
+                  eq.ownership,
+                  eq.status,
+                ]);
+                downloadCsv("Fleet_Operations_Maintenance_Digest", headers, rows);
+                notify("Fleet Operations Digest downloaded.");
+              }}
+              className="gap-2 shadow-sm"
+            >
+              <Download className="size-4" /> Download Fleet Digest (CSV)
             </Button>
           </div>
         )}
@@ -1077,6 +1099,61 @@ function EquipmentPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Statutory Fitness Certificate Renewal Policy Modal */}
+      {selectedCertAsset && (
+        <Dialog
+          open={Boolean(selectedCertAsset)}
+          onOpenChange={(open) => !open && setSelectedCertAsset(null)}
+        >
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+                <ShieldCheck className="size-4 text-emerald-600" />
+                <span>Statutory Compliance Policy</span>
+              </div>
+              <DialogTitle className="text-base font-bold">
+                Fitness Certificate Renewal ({selectedCertAsset.assetCode})
+              </DialogTitle>
+              <DialogDescription>
+                {selectedCertAsset.name} · Serial / Registration: {selectedCertAsset.assetCode}-RTO
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 py-2 text-xs">
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-3.5 space-y-1.5">
+                <span className="font-bold text-foreground">Third-Party Testing & Inspection Policy</span>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Statutory RTO roadworthiness, heavy machinery fitness, and crane load-test certifications are verified through accredited third-party inspection agencies. Create a Preventative Maintenance Work Order to schedule inspection and document compliance.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedCertAsset(null)}
+                >
+                  Dismiss
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    setSelectedCertAsset(null);
+                    setActiveSection("maintenance");
+                    setAddMaintOpen(true);
+                  }}
+                  className="gap-1.5"
+                >
+                  <Wrench className="size-3.5" /> Schedule Maintenance
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </AppShell>
   );
 }

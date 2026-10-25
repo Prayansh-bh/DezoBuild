@@ -160,6 +160,7 @@ export interface Indent {
 }
 
 export interface PurchaseOrderItem {
+  id?: string;
   materialId: string;
   materialName: string;
   quantity: number;
@@ -182,6 +183,7 @@ export interface PurchaseOrder {
   issueDate: string;
   expectedDelivery: string;
   status: "draft" | "issued" | "partially_received" | "delivered" | "cancelled";
+  rawStatus?: string;
   items: PurchaseOrderItem[];
   paymentTerms: string;
 }

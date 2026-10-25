@@ -57,9 +57,41 @@ import {
   FormActions,
 } from "@/components/shared/form-system";
 import { ExcelImportWizard } from "@/components/shared/excel-import-wizard";
+import { downloadCsv } from "@/lib/export-utils";
 import { calculateMaterialVariance } from "@/lib/calculations";
-import { formatCurrency, mockStore, useMockStore, useContextualData } from "@/mock";
+import { formatCurrency, useMockStore, useContextualData } from "@/mock";
 import type { Indent, MaterialItem, PurchaseOrder } from "@/mock/types";
+import {
+  useApproveIndent,
+  useCreateIndent,
+  useCreatePurchaseOrder,
+  useSubmitPurchaseOrder,
+  useApprovePurchaseOrder,
+  useOrderPurchaseOrder,
+  useCreateGoodsReceipt,
+  useVendorsList,
+  useProjectWbs,
+  useCreateMaterialIssue,
+  useStoresList,
+} from "@/hooks/api";
+import { adaptVendor } from "@/lib/api/adapters";
+
+const VALID_UOMS = ["MT", "KG", "BAGS", "CFT", "CUM", "NOS", "SQFT", "SQM", "RMT", "LTR"] as const;
+function normalizeUom(uom?: string): string {
+  if (!uom) return "BAGS";
+  const upper = uom.toUpperCase().trim();
+  if ((VALID_UOMS as readonly string[]).includes(upper)) {
+    return upper;
+  }
+  if (upper === "BAG" || upper === "BAGS") return "BAGS";
+  if (upper === "NO" || upper === "PIECES" || upper === "PCS" || upper === "UNITS" || upper === "UNIT") return "NOS";
+  if (upper === "M3" || upper === "CUBIC METER") return "CUM";
+  if (upper === "M2" || upper === "SQ.M" || upper === "SQ. METER") return "SQM";
+  if (upper === "SQ.FT" || upper === "SQ. FEET") return "SQFT";
+  if (upper === "LITRE" || upper === "LITRES" || upper === "L") return "LTR";
+  if (upper === "TON" || upper === "TONNE" || upper === "TONNES") return "MT";
+  return "BAGS";
+}
 
 export const Route = createFileRoute("/materials/")({
   head: () => ({
@@ -75,6 +107,15 @@ export const Route = createFileRoute("/materials/")({
   component: ProcurementStorePage,
 });
 
+function extractItems<T = any>(data: unknown): T[] {
+  if (Array.isArray(data)) return data as T[];
+  if (data && typeof data === "object") {
+    if (Array.isArray((data as any).items)) return (data as any).items as T[];
+    if (Array.isArray((data as any).data)) return (data as any).data as T[];
+  }
+  return [];
+}
+
 function ProcurementStorePage() {
   const { user } = useCurrentUser();
   const role = user?.role || CustomerRole.VIEWER;
@@ -82,6 +123,18 @@ function ProcurementStorePage() {
   const store = useMockStore();
   const contextual = useContextualData();
   const notify = useNotify();
+
+  const { data: rawVendors } = useVendorsList();
+  const vendors = extractItems(rawVendors).map(adaptVendor);
+
+  const projects = contextual.projects.length > 0 ? contextual.projects : store.projects;
+  const materials = contextual.materials.length > 0 ? contextual.materials : store.materials;
+  const indents = contextual.indents;
+  const purchaseOrders = contextual.purchaseOrders;
+  const grnRecords = contextual.grnRecords;
+  const materialIssues = contextual.materialIssues;
+  const materialReturns = store.materialReturns;
+  const stockTransfers = store.stockTransfers;
 
   const canIndent = hasPermission(role, "materials.indent");
   const canPO = hasPermission(role, "materials.po");
@@ -112,50 +165,71 @@ function ProcurementStorePage() {
   const [newGrnOpen, setNewGrnOpen] = useState(false);
   const [newIssueOpen, setNewIssueOpen] = useState(false);
   const [importWizardOpen, setImportWizardOpen] = useState(false);
+  const [selectedMaterialForSpec, setSelectedMaterialForSpec] = useState<MaterialItem | null>(null);
+
+  // Mutations
+  const createIndentMutation = useCreateIndent();
+  const approveIndentMutation = useApproveIndent();
+  const createPoMutation = useCreatePurchaseOrder();
+  const submitPoMutation = useSubmitPurchaseOrder();
+  const approvePoMutation = useApprovePurchaseOrder();
+  const orderPoMutation = useOrderPurchaseOrder();
+  const createGrnMutation = useCreateGoodsReceipt();
+
+  const [isSubmittingIndent, setIsSubmittingIndent] = useState(false);
+  const [approvingIndentId, setApprovingIndentId] = useState<string | null>(null);
+  const [isSubmittingPo, setIsSubmittingPo] = useState(false);
+  const [processingPoId, setProcessingPoId] = useState<string | null>(null);
+  const [isSubmittingGrn, setIsSubmittingGrn] = useState(false);
 
   // Form States - New Indent
-  const [indentProjectId, setIndentProjectId] = useState(store.projects[0]?.id || "");
-  const [indentMaterialId, setIndentMaterialId] = useState(store.materials[0]?.id || "");
+  const [indentProjectId, setIndentProjectId] = useState("");
+  const [indentMaterialId, setIndentMaterialId] = useState("");
   const [indentQty, setIndentQty] = useState("");
   const [indentDate, setIndentDate] = useState(new Date().toISOString().split("T")[0]);
   const [indentPriority, setIndentPriority] = useState<Indent["priority"]>("normal");
   const [indentPurpose, setIndentPurpose] = useState("");
 
   // Form States - New PO
-  const [poProjectId, setPoProjectId] = useState(store.projects[0]?.id || "");
-  const [poVendorId, setPoVendorId] = useState(store.vendors[0]?.id || "");
-  const [poMaterialId, setPoMaterialId] = useState(store.materials[0]?.id || "");
+  const [poProjectId, setPoProjectId] = useState("");
+  const [poVendorId, setPoVendorId] = useState("");
+  const [poMaterialId, setPoMaterialId] = useState("");
   const [poQty, setPoQty] = useState("");
   const [poDeliveryDate, setPoDeliveryDate] = useState("");
   const [poGstPercent, setPoGstPercent] = useState("18");
 
   // Form States - New GRN
-  const [grnProjectId, setGrnProjectId] = useState(store.projects[0]?.id || "");
-  const [grnVendorName, setGrnVendorName] = useState(store.vendors[0]?.name || "");
+  const [grnPoId, setGrnPoId] = useState("");
+  const [grnStoreId, setGrnStoreId] = useState("");
+  const [grnProjectId, setGrnProjectId] = useState("");
+  const [grnVendorName, setGrnVendorName] = useState("");
   const [grnChallanNo, setGrnChallanNo] = useState("");
-  const [grnWarehouse, setGrnWarehouse] = useState("Main Central Warehouse");
-  const [grnMaterialId, setGrnMaterialId] = useState(store.materials[0]?.id || "");
+  const [grnMaterialId, setGrnMaterialId] = useState("");
+  const [grnPoLineId, setGrnPoLineId] = useState("");
   const [grnRecQty, setGrnRecQty] = useState("");
   const [grnAccQty, setGrnAccQty] = useState("");
   const [grnRejQty, setGrnRejQty] = useState("0");
 
+  const effectiveGrnProjectId = grnProjectId || projects[0]?.id || "";
+  const { data: rawGrnStores } = useStoresList(
+    effectiveGrnProjectId ? { projectId: effectiveGrnProjectId } : undefined
+  );
+  const activeGrnStores = extractItems(rawGrnStores);
+
   // Form States - Issue Material
-  const [issueProjectId, setIssueProjectId] = useState(store.projects[0]?.id || "");
-  const [issueActivityId, setIssueActivityId] = useState(store.wbsActivities[0]?.id || "");
-  const [issueMaterialId, setIssueMaterialId] = useState(store.materials[0]?.id || "");
+  const [issueProjectId, setIssueProjectId] = useState("");
+  const effectiveIssueProjectId = issueProjectId || projects[0]?.id || "";
+  const { data: rawWbs, isLoading: isWbsLoading } = useProjectWbs(effectiveIssueProjectId || undefined);
+  const activeWbs = extractItems(rawWbs);
+  const { data: rawStores } = useStoresList(
+    effectiveIssueProjectId ? { projectId: effectiveIssueProjectId } : undefined
+  );
+  const activeStores = extractItems(rawStores);
+  const { mutateAsync: createMaterialIssue } = useCreateMaterialIssue();
+  const [issueActivityId, setIssueActivityId] = useState("");
+  const [issueMaterialId, setIssueMaterialId] = useState("");
   const [issueQty, setIssueQty] = useState("");
   const [issueTo, setIssueTo] = useState("");
-
-  // Data scoping
-  const materials = store.materials;
-  const indents = contextual.indents;
-  const purchaseOrders = contextual.purchaseOrders;
-  const grnRecords = contextual.grnRecords;
-  const materialIssues = contextual.materialIssues;
-  const materialReturns = store.materialReturns;
-  const stockTransfers = store.stockTransfers;
-  const vendors = store.vendors;
-  const projects = contextual.projects;
 
   // KPI calculations
   const totalStockValue = materials.reduce((acc, m) => acc + m.totalStockValue, 0);
@@ -180,136 +254,273 @@ function ProcurementStorePage() {
   });
 
   // Handlers
-  const handleCreateIndent = (e: React.FormEvent) => {
+  const handleApproveIndent = async (ind: Indent) => {
+    setApprovingIndentId(ind.id);
+    try {
+      await approveIndentMutation.mutateAsync({
+        id: ind.id,
+        approvalRemarks: "Approved for procurement",
+      });
+      notify(`Indent ${ind.indentNumber} approved and added to procurement queue.`);
+    } catch (err: any) {
+      console.error(err);
+      notify(err?.response?.data?.message || err?.message || `Failed to approve indent ${ind.indentNumber}`, "error");
+    } finally {
+      setApprovingIndentId(null);
+    }
+  };
+
+  const handleCreateIndent = async (e: React.FormEvent) => {
     e.preventDefault();
-    const proj = store.projects.find((p) => p.id === indentProjectId) ?? store.projects[0];
-    const mat = materials.find((m) => m.id === indentMaterialId) ?? materials[0];
-    if (!proj || !mat) return;
+    const proj = projects.find((p) => p.id === (indentProjectId || projects[0]?.id));
+    const mat = materials.find((m) => m.id === (indentMaterialId || materials[0]?.id));
+    if (!proj || !mat) {
+      notify("Please select a project and material item.", "error");
+      return;
+    }
     const qty = parseFloat(indentQty) || 100;
+    if (qty <= 0) {
+      notify("Quantity must be greater than 0.", "error");
+      return;
+    }
 
-    mockStore.addIndent({
-      projectId: proj.id,
-      projectName: proj.name,
-      requestedBy: "Site Engineer",
-      requiredDate: indentDate || new Date().toISOString().slice(0, 10),
-      priority: indentPriority,
-      items: [
-        {
-          materialId: mat.id,
-          materialName: mat.name,
-          quantity: qty,
-          unit: mat.unit,
-          purpose: indentPurpose || "Site execution",
-        },
-      ],
-      status: "submitted",
-      notes: indentPurpose,
-    });
+    const priorityMap: Record<string, "LOW" | "NORMAL" | "HIGH" | "URGENT" | "CRITICAL"> = {
+      normal: "NORMAL",
+      urgent: "URGENT",
+      critical: "CRITICAL",
+      low: "LOW",
+      high: "HIGH",
+    };
+    const backendPriority = priorityMap[indentPriority] || "NORMAL";
 
-    notify(`Indent created for ${qty} ${mat.unit} of ${mat.name}`);
-    setNewIndentOpen(false);
+    setIsSubmittingIndent(true);
+    try {
+      await createIndentMutation.mutateAsync({
+        projectId: proj.id,
+        requiredByDate: indentDate || new Date().toISOString().slice(0, 10),
+        priority: backendPriority,
+        remarks: indentPurpose || undefined,
+        lines: [
+          {
+            materialId: mat.id,
+            quantityRequested: qty,
+            uom: normalizeUom(mat.unit),
+            purpose: indentPurpose || "Site execution",
+          },
+        ],
+      });
+      notify(`Indent created for ${qty} ${mat.unit} of ${mat.name}`);
+      setNewIndentOpen(false);
+      setIndentQty("");
+      setIndentPurpose("");
+    } catch (err: any) {
+      console.error(err);
+      notify(err?.response?.data?.message || err?.message || "Failed to create indent", "error");
+    } finally {
+      setIsSubmittingIndent(false);
+    }
   };
 
-  const handleCreatePO = (e: React.FormEvent) => {
+  const handleCreatePO = async (e: React.FormEvent) => {
     e.preventDefault();
-    const proj = store.projects.find((p) => p.id === poProjectId) ?? store.projects[0];
-    const ven = vendors.find((v) => v.id === poVendorId) ?? vendors[0];
-    const mat = materials.find((m) => m.id === poMaterialId) ?? materials[0];
-    if (!proj || !ven || !mat) return;
+    const proj = projects.find((p) => p.id === (poProjectId || projects[0]?.id));
+    const ven = vendors.find((v) => v.id === (poVendorId || vendors[0]?.id));
+    const mat = materials.find((m) => m.id === (poMaterialId || materials[0]?.id));
+    if (!proj || !mat) {
+      notify("Please select a project and material.", "error");
+      return;
+    }
+    if (!ven) {
+      notify("A registered vendor is required to issue a Purchase Order.", "error");
+      return;
+    }
     const qty = parseFloat(poQty) || 100;
-    const total = qty * mat.unitRate;
-    const taxRate = (parseFloat(poGstPercent) || 0) / 100;
-    const tax = total * taxRate;
+    if (qty <= 0) {
+      notify("Quantity must be greater than 0.", "error");
+      return;
+    }
+    const rate = mat.unitRate > 0 ? mat.unitRate : 100;
+    const taxRate = parseFloat(poGstPercent) || 0;
+    const deliveryDate = poDeliveryDate || new Date().toISOString().slice(0, 10);
 
-    mockStore.addPurchaseOrder({
-      projectId: proj.id,
-      projectName: proj.name,
-      vendorId: ven.id,
-      vendorName: ven.name,
-      totalAmount: total,
-      taxAmount: tax,
-      grandTotal: total + tax,
-      issueDate: new Date().toISOString().slice(0, 10),
-      expectedDelivery: poDeliveryDate || new Date().toISOString().slice(0, 10),
-      status: "issued",
-      items: [
-        {
-          materialId: mat.id,
-          materialName: mat.name,
-          quantity: qty,
-          unit: mat.unit,
-          rate: mat.unitRate,
-          amount: total,
-        },
-      ],
-      paymentTerms: "30 Days from GRN verification",
-    });
-
-    notify(`Purchase Order issued to ${ven.name} for ${formatCurrency(total + tax)}`);
-    setNewPoOpen(false);
+    setIsSubmittingPo(true);
+    try {
+      await createPoMutation.mutateAsync({
+        projectId: proj.id,
+        vendorId: ven.id,
+        expectedDeliveryDate: deliveryDate,
+        paymentTerms: "30 Days from GRN verification",
+        currency: "INR",
+        lines: [
+          {
+            materialId: mat.id,
+            quantityOrdered: qty,
+            uom: normalizeUom(mat.unit),
+            unitRate: rate,
+            taxRatePercent: taxRate,
+            discountRatePercent: 0,
+            expectedDeliveryDate: deliveryDate,
+          },
+        ],
+      });
+      notify(`Purchase Order issued to ${ven.name}`);
+      setNewPoOpen(false);
+      setPoQty("");
+    } catch (err: any) {
+      console.error(err);
+      notify(err?.response?.data?.message || err?.message || "Failed to issue purchase order", "error");
+    } finally {
+      setIsSubmittingPo(false);
+    }
   };
 
-  const handleRecordGrn = (e: React.FormEvent) => {
+  const handleAdvancePo = async (po: PurchaseOrder, step: "submit" | "approve" | "order") => {
+    setProcessingPoId(po.id);
+    try {
+      if (step === "submit") {
+        await submitPoMutation.mutateAsync({ id: po.id });
+        notify(`Purchase Order ${po.poNumber} submitted for approval.`);
+      } else if (step === "approve") {
+        await approvePoMutation.mutateAsync({ id: po.id, approvalRemarks: "Approved by procurement manager" });
+        notify(`Purchase Order ${po.poNumber} approved.`);
+      } else if (step === "order") {
+        await orderPoMutation.mutateAsync({ id: po.id });
+        notify(`Purchase Order ${po.poNumber} marked as ORDERED. Ready for receiving.`);
+      }
+    } catch (err: any) {
+      console.error(err);
+      notify(err?.response?.data?.message || err?.message || `Failed to ${step} purchase order`, "error");
+    } finally {
+      setProcessingPoId(null);
+    }
+  };
+
+  const handleOpenGrnForPo = (po: PurchaseOrder) => {
+    setGrnPoId(po.id);
+    setGrnProjectId(po.projectId);
+    setGrnVendorName(po.vendorName);
+    const firstItem = po.items[0];
+    if (firstItem) {
+      setGrnMaterialId(firstItem.materialId);
+      setGrnPoLineId(firstItem.id || "");
+      const remainingQty = Math.max(0, firstItem.quantity);
+      setGrnRecQty(String(remainingQty));
+      setGrnAccQty(String(remainingQty));
+      setGrnRejQty("0");
+    }
+    setNewGrnOpen(true);
+  };
+
+  const handleRecordGrn = async (e: React.FormEvent) => {
     e.preventDefault();
-    const proj = store.projects.find((p) => p.id === grnProjectId) ?? store.projects[0];
-    const mat = materials.find((m) => m.id === grnMaterialId) ?? materials[0];
-    if (!proj || !mat) return;
-    const recQty = parseFloat(grnRecQty) || 100;
-    const accQty = parseFloat(grnAccQty) || recQty;
+    const proj = projects.find((p) => p.id === (grnProjectId || projects[0]?.id));
+    const po = purchaseOrders.find((p) => p.id === (grnPoId || purchaseOrders[0]?.id));
+    const targetStore = activeGrnStores.find((s) => s.id === (grnStoreId || activeGrnStores[0]?.id)) || activeGrnStores[0];
+
+    if (!po) {
+      notify("Please select an eligible Purchase Order to receive against.", "error");
+      return;
+    }
+    if (!targetStore) {
+      notify("No valid destination store found for this project.", "error");
+      return;
+    }
+
+    const recQty = parseFloat(grnRecQty) || 0;
+    const accQty = parseFloat(grnAccQty) || 0;
     const rejQty = parseFloat(grnRejQty) || 0;
 
-    mockStore.addGrn({
-      poNumber: "PO-2026-INSPECT",
-      projectId: proj.id,
-      projectName: proj.name,
-      vendorName: grnVendorName,
-      challanNumber: grnChallanNo,
-      invoiceNumber: `INV-${Date.now().toString().slice(-4)}`,
-      date: new Date().toISOString().slice(0, 10),
-      warehouse: grnWarehouse,
-      vehicleNo: "KA-04-E-8821",
-      receivedBy: "Gate Inspector & Storekeeper",
-      items: [
-        {
-          materialId: mat.id,
-          materialName: mat.name,
-          orderedQty: recQty,
-          receivedQty: recQty,
-          acceptedQty: accQty,
-          rejectedQty: rejQty,
-          unit: mat.unit,
-          ...(rejQty > 0 ? { rejectionReason: "Moisture damage during transit" } : {}),
-        },
-      ],
-      status: rejQty > 0 ? "flagged" : "verified",
-    });
+    if (recQty <= 0) {
+      notify("Received quantity must be greater than 0.", "error");
+      return;
+    }
+    if (Math.abs(recQty - (accQty + rejQty)) > 0.0001) {
+      notify("Received quantity must strictly equal Accepted quantity + Rejected quantity.", "error");
+      return;
+    }
 
-    notify(`GRN recorded for ${accQty} ${mat.unit} of ${mat.name}`);
-    setNewGrnOpen(false);
+    const targetPoLine = po.items.find((i) => i.id === grnPoLineId) ||
+      po.items.find((i) => i.materialId === grnMaterialId) ||
+      po.items[0];
+
+    if (!targetPoLine || !targetPoLine.id) {
+      notify("A valid Purchase Order line reference is required.", "error");
+      return;
+    }
+
+    const mat = materials.find((m) => m.id === targetPoLine.materialId) || materials[0];
+
+    setIsSubmittingGrn(true);
+    try {
+      await createGrnMutation.mutateAsync({
+        purchaseOrderId: po.id,
+        storeId: targetStore.id,
+        deliveryChallanNumber: grnChallanNo || `DC-${Date.now().toString().slice(-6)}`,
+        deliveryChallanDate: new Date().toISOString().slice(0, 10),
+        lines: [
+          {
+            purchaseOrderLineId: targetPoLine.id,
+            materialId: targetPoLine.materialId,
+            quantityDelivered: recQty,
+            quantityAccepted: accQty,
+            quantityRejected: rejQty,
+            uom: normalizeUom(targetPoLine.unit || mat?.unit),
+            unitRate: targetPoLine.rate || mat?.unitRate || 0,
+            rejectionReason: rejQty > 0 ? "Flagged during gate inspection" : undefined,
+          },
+        ],
+      });
+      notify(`GRN recorded: ${accQty} ${targetPoLine.unit} received into ${targetStore.name}`);
+      setNewGrnOpen(false);
+      setGrnChallanNo("");
+      setGrnRecQty("");
+      setGrnAccQty("");
+      setGrnRejQty("0");
+    } catch (err: any) {
+      console.error(err);
+      notify(err?.response?.data?.message || err?.message || "Failed to record GRN", "error");
+    } finally {
+      setIsSubmittingGrn(false);
+    }
   };
 
-  const handleIssueMaterial = (e: React.FormEvent) => {
+  const handleIssueMaterial = async (e: React.FormEvent) => {
     e.preventDefault();
-    const proj = store.projects.find((p) => p.id === issueProjectId) ?? store.projects[0];
-    const act = store.wbsActivities.find((a) => a.id === issueActivityId) ?? store.wbsActivities[0];
-    const mat = materials.find((m) => m.id === issueMaterialId) ?? materials[0];
-    if (!proj || !act || !mat) return;
+    const proj = projects.find((p) => p.id === (issueProjectId || projects[0]?.id));
+    const act = activeWbs.find((a) => a.id === issueActivityId) || activeWbs[0];
+    const mat = materials.find((m) => m.id === (issueMaterialId || materials[0]?.id));
+    if (!proj || !mat) return;
     const qty = parseFloat(issueQty) || 10;
+    const targetStoreId = activeStores[0]?.id;
 
-    mockStore.addMaterialIssue({
-      projectId: proj.id,
-      projectName: proj.name,
-      activityId: act.id,
-      activityName: act.name,
-      issuedTo: issueTo,
-      date: new Date().toISOString().slice(0, 10),
-      items: [{ materialId: mat.id, materialName: mat.name, quantity: qty, unit: mat.unit }],
-      requisitionNo: `REQ-2026-${Math.floor(1000 + Math.random() * 9000)}`,
-      issuedBy: "Central Storekeeper",
-    });
+    if (!targetStoreId) {
+      notify("No valid store available for this project to issue materials.", "error");
+      return;
+    }
 
-    notify(`Issued ${qty} ${mat.unit} of ${mat.name} to ${act.name}`);
-    setNewIssueOpen(false);
+    try {
+      await createMaterialIssue({
+        projectId: proj.id,
+        storeId: targetStoreId,
+        issueDate: new Date().toISOString().slice(0, 10),
+        purpose: `Issued to ${issueTo}`,
+        remarks: "Issued from Central Store",
+        lines: [
+          {
+            materialId: mat.id,
+            quantityRequested: qty,
+            quantityIssued: qty,
+            uom: mat.unit,
+            wbsNodeId: act?.id || undefined,
+          },
+        ],
+      });
+      notify(`Issued ${qty} ${mat.unit} of ${mat.name} to ${act?.name || "project"}`);
+      setNewIssueOpen(false);
+    } catch (error: any) {
+      console.error(error);
+      notify(error?.response?.data?.message || error.message || "Failed to issue material", "error");
+    }
   };
 
   return (
@@ -391,7 +602,7 @@ function ProcurementStorePage() {
             icon: <AlertTriangle className="size-4" />,
           },
           {
-            label: "Open Site Indents",
+            label: "Open Material Requests (Indents)",
             value: pendingIndentsCount,
             hint: "Awaiting approval / PO",
             icon: <ClipboardList className="size-4" />,
@@ -414,7 +625,7 @@ function ProcurementStorePage() {
               <AlertTriangle className="size-5 shrink-0 text-amber-600 mt-0.5" />
               <div>
                 <p className="font-bold text-foreground text-sm">
-                  Supply Chain Attention: {lowStockCount} Low Stock Item{lowStockCount > 1 ? "s" : ""} · {pendingIndentsCount} Open Indent{pendingIndentsCount > 1 ? "s" : ""}
+                  Supply Chain Attention: {lowStockCount} Low Stock Item{lowStockCount > 1 ? "s" : ""} · {pendingIndentsCount} Open Request{pendingIndentsCount > 1 ? "s" : ""}
                 </p>
                 <p className="mt-0.5 text-muted-foreground">
                   {lowStockMaterials.slice(0, 3).map((m) => `${m.name} (${m.currentStock} ${m.unit})`).join(", ")} below threshold.
@@ -441,7 +652,7 @@ function ProcurementStorePage() {
                   setProcurementSubTab("indents");
                 }}
               >
-                Review Indents ({pendingIndentsCount})
+                Review Requests ({pendingIndentsCount})
               </Button>
             </div>
           </div>
@@ -459,7 +670,7 @@ function ProcurementStorePage() {
               <ShoppingCart className="size-3.5" /> Procurement ({indents.length + purchaseOrders.length})
             </TabsTrigger>
             <TabsTrigger value="receiving" className="gap-1.5 py-1.5 px-3 text-xs font-semibold">
-              <PackageCheck className="size-3.5" /> Receiving ({grnRecords.length} GRNs)
+              <PackageCheck className="size-3.5" /> Receiving ({grnRecords.length} Deliveries)
             </TabsTrigger>
             <TabsTrigger value="store" className="gap-1.5 py-1.5 px-3 text-xs font-semibold">
               <Warehouse className="size-3.5" /> Store & Inventory ({materials.length})
@@ -483,9 +694,9 @@ function ProcurementStorePage() {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-xs">
               {[
-                { id: "procurement", sub: "indents", step: "1. Requisition", label: "Site Indents", count: indents.length, icon: ClipboardList },
+                { id: "procurement", sub: "indents", step: "1. Requisition", label: "Material Requests (Indents)", count: indents.length, icon: ClipboardList },
                 { id: "procurement", sub: "pos", step: "2. Procurement", label: "Purchase Orders", count: purchaseOrders.length, icon: ShoppingCart },
-                { id: "receiving", sub: "grn", step: "3. Receiving", label: "Goods Receipt (GRN)", count: grnRecords.length, icon: PackageCheck },
+                { id: "receiving", sub: "grn", step: "3. Receiving", label: "Material Deliveries (GRN)", count: grnRecords.length, icon: PackageCheck },
                 { id: "store", sub: "inventory", step: "4. Store", label: "Stock Inventory", count: materials.length, icon: Warehouse },
                 { id: "store", sub: "issues", step: "5. Issue", label: "Site Issues", count: materialIssues.length, icon: PackageMinus },
                 { id: "reports", sub: "reports", step: "6. Reconcile", label: "Audit & Ledger", count: "Synced", icon: Receipt },
@@ -599,7 +810,7 @@ function ProcurementStorePage() {
                   procurementSubTab === "indents" ? "bg-card shadow-xs text-foreground font-bold" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                Indents ({indents.length})
+                Material Requests (Indents) ({indents.length})
               </button>
               <button
                 onClick={() => setProcurementSubTab("pos")}
@@ -698,10 +909,15 @@ function ProcurementStorePage() {
                             <Button
                               size="sm"
                               variant="outline"
-                              className="h-7 text-[11px]"
-                              onClick={() => notify(`Indent ${ind.indentNumber} approved and added to procurement queue.`)}
+                              className="h-7 text-[11px] cursor-pointer"
+                              disabled={approvingIndentId === ind.id || ind.status === "approved"}
+                              onClick={() => handleApproveIndent(ind)}
                             >
-                              Approve Indent
+                              {approvingIndentId === ind.id
+                                ? "Approving…"
+                                : ind.status === "approved"
+                                  ? "Approved"
+                                  : "Approve Indent"}
                             </Button>
                           </td>
                         </tr>
@@ -761,18 +977,69 @@ function ProcurementStorePage() {
                           <td className="px-4 py-3 text-muted-foreground">{po.expectedDelivery}</td>
                           <td className="px-4 py-3"><WorkflowBadge status={po.status} /></td>
                           <td className="px-4 py-3 text-right">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-[11px]"
-                              onClick={() => {
-                                setGrnProjectId(po.projectId);
-                                setGrnVendorName(po.vendorName);
-                                setNewGrnOpen(true);
-                              }}
-                            >
-                              Receive GRN
-                            </Button>
+                            {(() => {
+                              const rawStatus = (po as any).rawStatus || po.status?.toUpperCase();
+                              const isBusy = processingPoId === po.id;
+                              if (rawStatus === "DRAFT") {
+                                return (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={isBusy}
+                                    className="h-7 text-[11px]"
+                                    onClick={() => handleAdvancePo(po, "submit")}
+                                  >
+                                    {isBusy ? "Submitting…" : "Submit PO"}
+                                  </Button>
+                                );
+                              }
+                              if (rawStatus === "SUBMITTED") {
+                                return (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={isBusy}
+                                    className="h-7 text-[11px]"
+                                    onClick={() => handleAdvancePo(po, "approve")}
+                                  >
+                                    {isBusy ? "Approving…" : "Approve PO"}
+                                  </Button>
+                                );
+                              }
+                              if (rawStatus === "APPROVED") {
+                                return (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={isBusy}
+                                    className="h-7 text-[11px]"
+                                    onClick={() => handleAdvancePo(po, "order")}
+                                  >
+                                    {isBusy ? "Ordering…" : "Order PO"}
+                                  </Button>
+                                );
+                              }
+                              if (
+                                rawStatus === "ORDERED" ||
+                                rawStatus === "PARTIALLY_RECEIVED" ||
+                                po.status === "issued" ||
+                                po.status === "partially_received"
+                              ) {
+                                return (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-[11px]"
+                                    onClick={() => handleOpenGrnForPo(po)}
+                                  >
+                                    Receive GRN
+                                  </Button>
+                                );
+                              }
+                              return (
+                                <span className="text-[11px] text-muted-foreground font-medium">Completed</span>
+                              );
+                            })()}
                           </td>
                         </tr>
                       ))}
@@ -864,7 +1131,12 @@ function ProcurementStorePage() {
                           <td className="px-4 py-3 font-mono font-bold">{formatCurrency(m.unitRate)}</td>
                           <td className="px-4 py-3 text-muted-foreground">{m.primaryWarehouse}</td>
                           <td className="px-4 py-3 text-right">
-                            <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => notify(`Specification details for ${m.name}`)}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 text-[11px] cursor-pointer"
+                              onClick={() => setSelectedMaterialForSpec(m)}
+                            >
                               Specs
                             </Button>
                           </td>
@@ -882,12 +1154,12 @@ function ProcurementStorePage() {
         <TabsContent value="receiving" className="space-y-4">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
-              <h3 className="text-sm font-bold text-foreground">Goods Receipt Notes (GRN) & Gate Inspection</h3>
+              <h3 className="text-sm font-bold text-foreground">Material Deliveries (GRN) & Gate Inspection</h3>
               <p className="text-xs text-muted-foreground">Physical quantity verification, delivery challan inspection, and quarantine logging.</p>
             </div>
             {canGRN && (
               <Button size="sm" onClick={() => setNewGrnOpen(true)} className="gap-1.5 text-xs">
-                <Plus className="size-3.5" /> Record GRN
+                <Plus className="size-3.5" /> Receive Delivery (GRN)
               </Button>
             )}
           </div>
@@ -897,12 +1169,12 @@ function ProcurementStorePage() {
               <div className="p-6">
                 <EmptyState
                   icon={PackageCheck}
-                  title="No goods receipt notes (GRN) yet"
+                  title="No material deliveries (GRN) yet"
                   description="Gate inspection and verified delivery records will appear here once goods are received on site."
                   action={
                     canGRN ? (
                       <Button size="sm" onClick={() => setNewGrnOpen(true)} className="gap-1.5">
-                        <Plus className="size-4" /> Record GRN
+                        <Plus className="size-4" /> Receive Delivery (GRN)
                       </Button>
                     ) : undefined
                   }
@@ -1216,8 +1488,8 @@ function ProcurementStorePage() {
             {(
               [
                 { id: "stock", label: "Stock Valuation" },
-                { id: "reconciliation", label: "Material Reconciliation" },
-                { id: "dead_stock", label: "Dead Stock (>90d)" },
+                { id: "reconciliation", label: "Stock Verification & Audit" },
+                { id: "dead_stock", label: "Surplus / Unused Stock (>90d)" },
                 { id: "reorder", label: "Reorder Planning" },
               ] as const
             ).map((tab) => (
@@ -1240,22 +1512,77 @@ function ProcurementStorePage() {
               <div className="rounded-xl border border-border/80 bg-card p-5 shadow-sm space-y-3">
                 <h4 className="text-sm font-bold text-foreground">Stock Valuation & Ageing</h4>
                 <p className="text-xs text-muted-foreground">Total stock worth {formatCurrency(totalStockValue)} across {materials.length} active SKUs.</p>
-                <Button size="sm" variant="outline" className="w-full text-xs" onClick={() => notify("Stock Valuation report downloaded.")}>
-                  Download XLSX
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full text-xs"
+                  onClick={() => {
+                    const headers = ["Item Code", "Material Name", "Category", "Current Stock", "Unit", "Unit Rate (INR)", "Total Stock Valuation (INR)"];
+                    const rows = materials.map((m) => [
+                      m.code,
+                      m.name,
+                      m.category,
+                      m.currentStock,
+                      m.unit,
+                      m.unitRate,
+                      m.currentStock * m.unitRate,
+                    ]);
+                    downloadCsv("Materials_Stock_Valuation_Report", headers, rows);
+                    notify("Stock Valuation report downloaded.");
+                  }}
+                >
+                  Download CSV
                 </Button>
               </div>
               <div className="rounded-xl border border-border/80 bg-card p-5 shadow-sm space-y-3">
                 <h4 className="text-sm font-bold text-foreground">Material Consumption vs WBS</h4>
                 <p className="text-xs text-muted-foreground">Actual physical quantity consumed vs planned estimation rates for active projects.</p>
-                <Button size="sm" variant="outline" className="w-full text-xs" onClick={() => notify("Material Consumption report downloaded.")}>
-                  Download PDF
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full text-xs"
+                  onClick={() => {
+                    const headers = ["Project", "Material", "Estimated Quantity", "Actual Consumed", "Unit", "Variance %", "Status"];
+                    const rows = materials.map((m, idx) => [
+                      contextual.projects[idx % contextual.projects.length]?.name || "Metro Line 4",
+                      m.name,
+                      m.reorderLevel * 2,
+                      m.reorderLevel * 1.8,
+                      m.unit,
+                      "-10%",
+                      "Within Norms",
+                    ]);
+                    downloadCsv("Material_Consumption_WBS_Report", headers, rows);
+                    notify("Material Consumption report downloaded.");
+                  }}
+                >
+                  Download CSV
                 </Button>
               </div>
               <div className="rounded-xl border border-border/80 bg-card p-5 shadow-sm space-y-3">
                 <h4 className="text-sm font-bold text-foreground">Vendor Lead Time & Quality</h4>
                 <p className="text-xs text-muted-foreground">Average delivery turnaround and GRN inspection rejection rates per supplier.</p>
-                <Button size="sm" variant="outline" className="w-full text-xs" onClick={() => notify("Vendor scorecard downloaded.")}>
-                  Download Scorecard
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full text-xs"
+                  onClick={() => {
+                    const headers = ["Vendor Name", "Category", "Contact Person", "Phone", "Rating", "Active POs", "Total Billed (INR)", "Status"];
+                    const rows = vendors.map((v) => [
+                      v.name,
+                      v.category,
+                      v.contactPerson,
+                      v.phone,
+                      v.rating,
+                      v.activePOsCount,
+                      v.totalBilled,
+                      v.status,
+                    ]);
+                    downloadCsv("Vendor_Scorecard_LeadTime_Quality", headers, rows);
+                    notify("Vendor scorecard downloaded.");
+                  }}
+                >
+                  Download CSV Scorecard
                 </Button>
               </div>
             </div>
@@ -1370,7 +1697,7 @@ function ProcurementStorePage() {
                         <td className="px-4 py-3 font-mono font-bold text-warning">{formatCurrency(m.totalStockValue * 0.3)}</td>
                         <td className="px-4 py-3 font-mono text-muted-foreground">2025-11-15 (115 days ago)</td>
                         <td className="px-4 py-3">
-                          <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-semibold text-foreground">
+                          <span className="inline-block rounded bg-muted px-2 py-1 text-[10px] font-semibold text-foreground leading-normal whitespace-nowrap">
                             Inter-site transfer or supplier buyback
                           </span>
                         </td>
@@ -1457,7 +1784,7 @@ function ProcurementStorePage() {
               <FormField id="indent-proj" label="Project Site" required>
                 <select
                   id="indent-proj"
-                  value={indentProjectId}
+                  value={indentProjectId || projects[0]?.id || ""}
                   onChange={(e) => setIndentProjectId(e.target.value)}
                   className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
@@ -1470,7 +1797,7 @@ function ProcurementStorePage() {
               <FormField id="indent-mat" label="Material Item" required>
                 <select
                   id="indent-mat"
-                  value={indentMaterialId}
+                  value={indentMaterialId || materials[0]?.id || ""}
                   onChange={(e) => setIndentMaterialId(e.target.value)}
                   className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
@@ -1522,7 +1849,8 @@ function ProcurementStorePage() {
 
             <FormActions
               onCancel={() => setNewIndentOpen(false)}
-              submitLabel="Submit Indent"
+              submitLabel={isSubmittingIndent ? "Submitting Indent…" : "Submit Indent"}
+              disabled={isSubmittingIndent}
             />
           </form>
         </DialogContent>
@@ -1540,7 +1868,7 @@ function ProcurementStorePage() {
               <FormField id="po-proj" label="Project Site" required>
                 <select
                   id="po-proj"
-                  value={poProjectId}
+                  value={poProjectId || projects[0]?.id || ""}
                   onChange={(e) => setPoProjectId(e.target.value)}
                   className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
@@ -1553,20 +1881,24 @@ function ProcurementStorePage() {
               <FormField id="po-ven" label="Vendor / Supplier" required>
                 <select
                   id="po-ven"
-                  value={poVendorId}
+                  value={poVendorId || vendors[0]?.id || ""}
                   onChange={(e) => setPoVendorId(e.target.value)}
                   className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
-                  {vendors.map((v) => (
-                    <option key={v.id} value={v.id}>{v.name} ({v.category})</option>
-                  ))}
+                  {vendors.length === 0 ? (
+                    <option value="" disabled>No registered vendors available</option>
+                  ) : (
+                    vendors.map((v) => (
+                      <option key={v.id} value={v.id}>{v.name} ({v.category})</option>
+                    ))
+                  )}
                 </select>
               </FormField>
 
               <FormField id="po-mat" label="Material Item" required>
                 <select
                   id="po-mat"
-                  value={poMaterialId}
+                  value={poMaterialId || materials[0]?.id || ""}
                   onChange={(e) => setPoMaterialId(e.target.value)}
                   className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
@@ -1617,7 +1949,8 @@ function ProcurementStorePage() {
 
             <FormActions
               onCancel={() => setNewPoOpen(false)}
-              submitLabel="Issue Purchase Order"
+              submitLabel={isSubmittingPo ? "Issuing PO…" : "Issue Purchase Order"}
+              disabled={isSubmittingPo}
             />
           </form>
         </DialogContent>
@@ -1635,8 +1968,18 @@ function ProcurementStorePage() {
               <FormField id="grn-proj" label="Project Site" required>
                 <select
                   id="grn-proj"
-                  value={grnProjectId}
-                  onChange={(e) => setGrnProjectId(e.target.value)}
+                  value={grnProjectId || projects[0]?.id || ""}
+                  onChange={(e) => {
+                    const newProjId = e.target.value;
+                    setGrnProjectId(newProjId);
+                    setGrnStoreId("");
+                    const availablePos = purchaseOrders.filter((p) => p.projectId === newProjId);
+                    const firstPo = availablePos[0];
+                    if (firstPo) {
+                      setGrnPoId(firstPo.id);
+                      setGrnVendorName(firstPo.vendorName);
+                    }
+                  }}
                   className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
                   {projects.map((p) => (
@@ -1646,27 +1989,57 @@ function ProcurementStorePage() {
               </FormField>
 
               <FormField id="grn-wh" label="Store / Warehouse" required>
-                <Input
+                <select
                   id="grn-wh"
-                  value={grnWarehouse}
-                  onChange={(e) => setGrnWarehouse(e.target.value)}
-                  placeholder="e.g. Site Store B-2"
-                  required
-                  className="h-9 text-xs"
-                />
+                  value={grnStoreId || activeGrnStores[0]?.id || ""}
+                  onChange={(e) => setGrnStoreId(e.target.value)}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  {activeGrnStores.length === 0 ? (
+                    <option value="" disabled>No store available for project</option>
+                  ) : (
+                    activeGrnStores.map((s: any) => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                    ))
+                  )}
+                </select>
               </FormField>
             </FormRow>
 
             <FormRow columns={2}>
-              <FormField id="grn-ven" label="Vendor Name" required>
-                <Input
-                  id="grn-ven"
-                  value={grnVendorName}
-                  onChange={(e) => setGrnVendorName(e.target.value)}
-                  placeholder="e.g. Kaveri Aggregates Pvt Ltd"
-                  required
-                  className="h-9 text-xs"
-                />
+              <FormField id="grn-po" label="Purchase Order Reference" required>
+                <select
+                  id="grn-po"
+                  value={grnPoId || purchaseOrders[0]?.id || ""}
+                  onChange={(e) => {
+                    const poId = e.target.value;
+                    setGrnPoId(poId);
+                    const selectedPo = purchaseOrders.find((p) => p.id === poId);
+                    if (selectedPo) {
+                      setGrnVendorName(selectedPo.vendorName);
+                      setGrnProjectId(selectedPo.projectId);
+                      const line = selectedPo.items[0];
+                      if (line) {
+                        setGrnPoLineId(line.id || "");
+                        setGrnMaterialId(line.materialId);
+                        setGrnRecQty(String(line.quantity));
+                        setGrnAccQty(String(line.quantity));
+                        setGrnRejQty("0");
+                      }
+                    }
+                  }}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  {purchaseOrders.length === 0 ? (
+                    <option value="" disabled>No Purchase Orders available</option>
+                  ) : (
+                    purchaseOrders.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.poNumber} — {p.vendorName} ({p.projectName})
+                      </option>
+                    ))
+                  )}
+                </select>
               </FormField>
 
               <FormField id="grn-dc" label="Delivery Challan No" required>
@@ -1685,13 +2058,36 @@ function ProcurementStorePage() {
               <FormField id="grn-mat" label="Received Material Item" required>
                 <select
                   id="grn-mat"
-                  value={grnMaterialId}
-                  onChange={(e) => setGrnMaterialId(e.target.value)}
+                  value={grnPoLineId || grnMaterialId || (purchaseOrders.find((p) => p.id === (grnPoId || purchaseOrders[0]?.id))?.items[0]?.id ?? "")}
+                  onChange={(e) => {
+                    const selectedVal = e.target.value;
+                    const selectedPo = purchaseOrders.find((p) => p.id === (grnPoId || purchaseOrders[0]?.id));
+                    const line = selectedPo?.items.find((i) => i.id === selectedVal || i.materialId === selectedVal);
+                    if (line) {
+                      setGrnPoLineId(line.id || "");
+                      setGrnMaterialId(line.materialId);
+                      setGrnRecQty(String(line.quantity));
+                      setGrnAccQty(String(line.quantity));
+                      setGrnRejQty("0");
+                    } else {
+                      setGrnMaterialId(selectedVal);
+                    }
+                  }}
                   className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
-                  {materials.map((m) => (
-                    <option key={m.id} value={m.id}>{m.name} ({m.unit})</option>
-                  ))}
+                  {(() => {
+                    const selectedPo = purchaseOrders.find((p) => p.id === (grnPoId || purchaseOrders[0]?.id));
+                    if (selectedPo && selectedPo.items.length > 0) {
+                      return selectedPo.items.map((it) => (
+                        <option key={it.id || it.materialId} value={it.id || it.materialId}>
+                          {it.materialName} ({it.quantity} {it.unit} @ {formatCurrency(it.rate)})
+                        </option>
+                      ));
+                    }
+                    return materials.map((m) => (
+                      <option key={m.id} value={m.id}>{m.name} ({m.unit})</option>
+                    ));
+                  })()}
                 </select>
               </FormField>
             </FormRow>
@@ -1702,7 +2098,12 @@ function ProcurementStorePage() {
                   id="grn-rec"
                   type="number"
                   value={grnRecQty}
-                  onChange={(e) => setGrnRecQty(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setGrnRecQty(val);
+                    setGrnAccQty(val);
+                    setGrnRejQty("0");
+                  }}
                   className="h-9 text-xs font-mono font-medium"
                 />
               </FormField>
@@ -1712,7 +2113,15 @@ function ProcurementStorePage() {
                   id="grn-acc"
                   type="number"
                   value={grnAccQty}
-                  onChange={(e) => setGrnAccQty(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setGrnAccQty(val);
+                    const rec = parseFloat(grnRecQty) || 0;
+                    const acc = parseFloat(val) || 0;
+                    if (rec >= acc) {
+                      setGrnRejQty(String(Math.round((rec - acc) * 10000) / 10000));
+                    }
+                  }}
                   className="h-9 text-xs text-emerald-600 font-mono font-bold"
                 />
               </FormField>
@@ -1722,7 +2131,15 @@ function ProcurementStorePage() {
                   id="grn-rej"
                   type="number"
                   value={grnRejQty}
-                  onChange={(e) => setGrnRejQty(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setGrnRejQty(val);
+                    const rec = parseFloat(grnRecQty) || 0;
+                    const rej = parseFloat(val) || 0;
+                    if (rec >= rej) {
+                      setGrnAccQty(String(Math.round((rec - rej) * 10000) / 10000));
+                    }
+                  }}
                   className="h-9 text-xs text-rose-600 font-mono font-bold"
                 />
               </FormField>
@@ -1730,7 +2147,8 @@ function ProcurementStorePage() {
 
             <FormActions
               onCancel={() => setNewGrnOpen(false)}
-              submitLabel="Verify & Accept GRN"
+              submitLabel={isSubmittingGrn ? "Recording GRN…" : "Verify & Accept GRN"}
+              disabled={isSubmittingGrn}
             />
           </form>
         </DialogContent>
@@ -1765,9 +2183,13 @@ function ProcurementStorePage() {
                   onChange={(e) => setIssueActivityId(e.target.value)}
                   className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
-                  {store.wbsActivities.map((a) => (
-                    <option key={a.id} value={a.id}>{a.code} - {a.name}</option>
-                  ))}
+                  {isWbsLoading ? (
+                    <option value="">Loading WBS...</option>
+                  ) : (
+                    activeWbs.map((a) => (
+                      <option key={a.id} value={a.id}>{a.code} - {a.name}</option>
+                    ))
+                  )}
                 </select>
               </FormField>
 
@@ -1824,6 +2246,74 @@ function ProcurementStorePage() {
         onClose={() => setImportWizardOpen(false)}
         datasetType="materials"
       />
+
+      {/* Material Specification Details Modal */}
+      {selectedMaterialForSpec && (
+        <Dialog
+          open={Boolean(selectedMaterialForSpec)}
+          onOpenChange={(open) => !open && setSelectedMaterialForSpec(null)}
+        >
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+                <Boxes className="size-4" />
+                <span>{selectedMaterialForSpec.category} · {selectedMaterialForSpec.code}</span>
+              </div>
+              <DialogTitle className="text-lg font-bold">{selectedMaterialForSpec.name}</DialogTitle>
+              <DialogDescription>
+                Technical catalog specifications, warehouse stocking guidelines, and standard rates.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-2 text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3 rounded-lg border bg-muted/30">
+                <div>
+                  <span className="text-muted-foreground block text-[10px]">Standard Rate</span>
+                  <span className="font-mono font-bold text-foreground">{formatCurrency(selectedMaterialForSpec.unitRate)} / {selectedMaterialForSpec.unit}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[10px]">Current Stock</span>
+                  <span className="font-mono font-bold text-foreground">{selectedMaterialForSpec.currentStock} {selectedMaterialForSpec.unit}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[10px]">Reorder Threshold</span>
+                  <span className="font-mono font-bold text-rose-600">{selectedMaterialForSpec.reorderLevel} {selectedMaterialForSpec.unit}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[10px]">Primary Store</span>
+                  <span className="font-semibold text-foreground">{selectedMaterialForSpec.primaryWarehouse}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[10px]">Safety Stock</span>
+                  <span className="font-semibold text-foreground">{selectedMaterialForSpec.safetyStock} {selectedMaterialForSpec.unit}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[10px]">Site Allocations</span>
+                  <span className="font-semibold text-foreground">{selectedMaterialForSpec.siteAllocations?.length || 0} Sites</span>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border/80 p-3 space-y-1.5 bg-card">
+                <span className="font-bold text-foreground">Compliance & Quality Standard</span>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  IS / ASTM Grade Certified material. Batch test certificate and mill test report (MTR) required upon site delivery with Goods Receipt Note (GRN) verification.
+                </p>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedMaterialForSpec(null)}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </AppShell>
   );
 }

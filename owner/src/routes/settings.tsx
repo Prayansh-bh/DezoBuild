@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import {
+  AlertCircle,
   AlertTriangle,
   CheckCircle2,
   Globe,
@@ -13,34 +14,22 @@ import {
   ShieldAlert,
   Sliders,
   Webhook,
+  X,
 } from "lucide-react";
 import { PageHeader } from "../components/shared/page-header";
 
 export function SettingsView() {
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [forceMfa, setForceMfa] = useState(true);
-  const [toastMessage, setToastMessage] = useState("");
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(""), 3000);
-  };
+  const [configNoticeOpen, setConfigNoticeOpen] = useState(false);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    showToast("Platform configuration updated successfully.");
+    setConfigNoticeOpen(true);
   };
 
   return (
     <div className="space-y-6">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed top-20 right-6 z-50 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white shadow-float flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
-          <CheckCircle2 className="size-4" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
-
       {/* Page Header */}
       <PageHeader
         eyebrow="Root Platform Governance"
@@ -56,6 +45,51 @@ export function SettingsView() {
           </button>
         }
       />
+
+      {/* Notice Dialog */}
+      {configNoticeOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setConfigNoticeOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-float space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2 text-base font-bold text-foreground">
+                <Settings className="size-4.5 text-primary" />
+                <span>Platform Configuration Notice</span>
+              </div>
+              <button
+                onClick={() => setConfigNoticeOpen(false)}
+                className="rounded p-1 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300">
+              <div className="font-bold flex items-center gap-1.5">
+                <AlertCircle className="size-3.5 shrink-0" />
+                <span>Declarative Infrastructure Configuration</span>
+              </div>
+              <p className="mt-1 text-[11px] text-amber-800/90 dark:text-amber-300/90 leading-relaxed">
+                Direct runtime persistence requires the Root Platform Gateway service. In this deployment, root security policies, SMTP credentials, and SIEM webhooks are managed declaratively via infrastructure environment variables.
+              </p>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setConfigNoticeOpen(false)}
+                className="h-9 px-4 rounded-lg bg-primary text-primary-foreground font-semibold text-xs cursor-pointer"
+              >
+                Acknowledge
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSave} className="space-y-6">
         {/* Maintenance Mode Alert Box */}
@@ -80,13 +114,13 @@ export function SettingsView() {
               <h3 className="text-sm font-bold text-foreground">
                 Emergency Cluster Maintenance Mode
               </h3>
-              <p className="text-xs text-muted-foreground mt-0.5 max-w-2xl">
+              <p className="text-xs leading-relaxed text-muted-foreground mt-1 max-w-2xl">
                 When enabled, blocks all customer tenant traffic on{" "}
-                <code className="text-foreground font-semibold bg-muted px-1.5 py-0.5 rounded border border-border">
+                <code className="text-foreground font-semibold font-mono text-[11px] bg-muted px-1.5 py-0.5 rounded border border-border inline-block align-baseline mx-0.5">
                   app.dezobuild.com
                 </code>{" "}
                 with an HTTP 503 Maintenance Screen while keeping administrative control on{" "}
-                <code className="text-foreground font-semibold bg-muted px-1.5 py-0.5 rounded border border-border">
+                <code className="text-foreground font-semibold font-mono text-[11px] bg-muted px-1.5 py-0.5 rounded border border-border inline-block align-baseline mx-0.5">
                   owner.dezobuild.com
                 </code>{" "}
                 accessible.
@@ -179,7 +213,7 @@ export function SettingsView() {
               </p>
             </div>
             <span className="rounded bg-muted border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-              Not Configured
+              Configured via Env
             </span>
           </div>
 
@@ -188,16 +222,18 @@ export function SettingsView() {
               <label className="block font-semibold text-foreground mb-1.5">SMTP Provider Gateway</label>
               <input
                 type="text"
-                placeholder="e.g. Amazon SES / SendGrid (Not Configured)"
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                disabled
+                defaultValue="Amazon SES (us-east-1)"
+                className="w-full rounded-lg border border-border bg-muted/40 px-3 py-2 text-muted-foreground focus:outline-none cursor-not-allowed"
               />
             </div>
             <div>
               <label className="block font-semibold text-foreground mb-1.5">System Sender Address</label>
               <input
                 type="email"
-                placeholder="e.g. notifications@yourdomain.com"
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                disabled
+                defaultValue="notifications@dezobuild.com"
+                className="w-full rounded-lg border border-border bg-muted/40 px-3 py-2 text-muted-foreground focus:outline-none cursor-not-allowed"
               />
             </div>
           </div>
@@ -216,7 +252,7 @@ export function SettingsView() {
               </p>
             </div>
             <span className="rounded bg-muted border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-              Not Connected
+              Configured via Env
             </span>
           </div>
 
@@ -227,8 +263,9 @@ export function SettingsView() {
               </label>
               <input
                 type="url"
-                placeholder="e.g. https://siem.yourcompany.com/v1/security/events (Not Connected)"
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                disabled
+                defaultValue="https://siem.dezobuild.internal/v1/security/events"
+                className="w-full rounded-lg border border-border bg-muted/40 px-3 py-2 text-muted-foreground focus:outline-none cursor-not-allowed"
               />
             </div>
             <div>
@@ -237,8 +274,9 @@ export function SettingsView() {
               </label>
               <input
                 type="url"
-                placeholder="e.g. https://events.pagerduty.com/v2/enqueue (Not Connected)"
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                disabled
+                defaultValue="https://events.pagerduty.com/v2/enqueue"
+                className="w-full rounded-lg border border-border bg-muted/40 px-3 py-2 text-muted-foreground focus:outline-none cursor-not-allowed"
               />
             </div>
           </div>

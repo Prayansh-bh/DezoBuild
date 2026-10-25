@@ -33,7 +33,9 @@ import { HealthBadge, StatusPill, WorkflowBadge } from "@/components/shared/stat
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatCurrency, useMockStore, useContextualData } from "@/mock";
-import type { Project } from "@/mock/types";
+import type { Project, DocumentItem } from "@/mock/types";
+import { DocumentViewerDialog } from "@/components/shared/document-viewer";
+import { downloadCsv } from "@/lib/export-utils";
 
 export const Route = createFileRoute("/projects/")({
   head: () => ({
@@ -65,6 +67,7 @@ function ProjectsListPage() {
   const [selectedCity, setSelectedCity] = useState<string>("all");
   const [selectedHealth, setSelectedHealth] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
+  const [selectedViewerDoc, setSelectedViewerDoc] = useState<DocumentItem | null>(null);
 
   // Filtered projects
   const filteredProjects = projects.filter((p) => {
@@ -579,15 +582,30 @@ function ProjectsListPage() {
             ) : (
               <div className="divide-y divide-border/60 text-xs">
                 {documents.map((doc) => (
-                  <div key={doc.id} className="p-3.5 flex justify-between items-center hover:bg-muted/20">
+                  <div
+                    key={doc.id}
+                    onClick={() => setSelectedViewerDoc(doc)}
+                    className="p-3.5 flex justify-between items-center hover:bg-muted/20 cursor-pointer transition-colors"
+                  >
                     <div className="flex items-center gap-3">
                       <FileText className="size-5 text-primary shrink-0" />
                       <div>
-                        <p className="font-bold text-foreground">{doc.name}</p>
+                        <p className="font-bold text-foreground hover:underline">{doc.name}</p>
                         <p className="text-[11px] text-muted-foreground">{doc.projectName} · Category: {doc.category} · Rev: {doc.version}</p>
                       </div>
                     </div>
-                    <Button size="sm" variant="ghost" className="h-7 text-xs">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const headers = ["Document ID", "Document Name", "Project", "Category", "Type", "Revision", "Format", "Size", "Uploaded By", "Updated Date"];
+                        const rows = [[doc.id, doc.name, doc.projectName, doc.category, doc.type, doc.version, doc.fileExtension, doc.size, doc.uploadedBy, doc.updatedDate]];
+                        const baseName = doc.name.replace(/\.[^/.]+$/, "");
+                        downloadCsv(`Document_${baseName}_Export`, headers, rows);
+                      }}
+                    >
                       <Download className="size-3.5 mr-1" /> {doc.size}
                     </Button>
                   </div>
@@ -597,6 +615,13 @@ function ProjectsListPage() {
           </div>
         )}
       </Tabs>
+
+      {/* Document Viewer Modal */}
+      <DocumentViewerDialog
+        document={selectedViewerDoc}
+        isOpen={Boolean(selectedViewerDoc)}
+        onClose={() => setSelectedViewerDoc(null)}
+      />
     </AppShell>
   );
 }

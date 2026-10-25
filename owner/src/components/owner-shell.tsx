@@ -16,6 +16,7 @@ import {
   LayoutDashboard,
   LineChart,
   Lock,
+  LogOut,
   Menu,
   Plus,
   Radio,
@@ -31,6 +32,7 @@ import {
 } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
 import { MOCK_TELEMETRY, MOCK_TENANTS } from "../mock/platform-data";
+import { usePlatformAuth } from "../auth";
 
 export interface NavItem {
   id: string;
@@ -45,8 +47,8 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   { id: "tenants", label: "Companies & Tenants", icon: Building2 },
   { id: "subscriptions", label: "Subscriptions & Plans", icon: Crown },
   { id: "billing", label: "Billing & Invoices", icon: CreditCard },
-  { id: "users", label: "Users & Seat Quotas", icon: Users },
-  { id: "entitlements", label: "Feature Entitlements", icon: Sliders },
+  { id: "users", label: "Users & Team Seats", icon: Users },
+  { id: "entitlements", label: "Feature Access & Limits", icon: Sliders },
   { id: "analytics", label: "Platform Analytics", icon: LineChart },
   { id: "health", label: "System Health", icon: Activity },
   { id: "audit", label: "Global Audit Logs", icon: FileCheck2 },
@@ -88,6 +90,7 @@ interface OwnerShellProps {
 }
 
 export function OwnerShell({ activeTab, onTabChange, children }: OwnerShellProps) {
+  const { user, logout } = usePlatformAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [showBoundaryModal, setShowBoundaryModal] = useState(false);
@@ -176,16 +179,32 @@ export function OwnerShell({ activeTab, onTabChange, children }: OwnerShellProps
 
           <div className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg border border-sidebar-border/60 bg-sidebar-accent/30">
             <div className="grid size-8 place-items-center rounded-full bg-red-500/15 border border-red-500/25 font-bold text-red-600 dark:text-red-400 text-xs shrink-0">
-              SA
+              {user?.fullName
+                ? user.fullName
+                    .split(" ")
+                    .map((n) => n[0])
+                    .join("")
+                    .slice(0, 2)
+                    .toUpperCase()
+                : "SA"}
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-semibold text-sidebar-foreground">
-                Super Administrator
+                {user?.fullName || "Super Administrator"}
               </p>
               <p className="truncate text-[10px] text-sidebar-muted">
-                superadmin@dezobuild.com
+                {user?.email || "superadmin@dezobuild.com"}
               </p>
             </div>
+            <button
+              onClick={async () => {
+                await logout();
+              }}
+              title="Terminate Platform Session (Logout)"
+              className="p-1 rounded text-sidebar-muted hover:text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
+            >
+              <LogOut className="size-3.5" />
+            </button>
           </div>
         </div>
       </aside>
@@ -197,45 +216,81 @@ export function OwnerShell({ activeTab, onTabChange, children }: OwnerShellProps
           onClick={() => setMobileMenuOpen(false)}
         >
           <aside
-            className="h-full w-[82%] max-w-[310px] overflow-y-auto bg-sidebar p-4 text-sidebar-foreground border-r border-sidebar-border shadow-float"
+            className="h-full w-[82%] max-w-[310px] overflow-y-auto bg-sidebar p-4 text-sidebar-foreground border-r border-sidebar-border shadow-float flex flex-col justify-between"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between">
-              <Brand compact />
-              <div className="flex items-center gap-1">
-                <ThemeToggle />
+            <div>
+              <div className="flex items-center justify-between">
+                <Brand compact />
+                <div className="flex items-center gap-1">
+                  <ThemeToggle />
+                  <button
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="rounded p-1 text-sidebar-muted hover:text-sidebar-foreground"
+                  >
+                    <X className="size-5" />
+                  </button>
+                </div>
+              </div>
+
+              <nav className="mt-6 space-y-1">
+                {OWNER_NAV_ITEMS.map((item) => {
+                  const Icon = item.icon;
+                  const active = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        onTabChange(item.id);
+                        setMobileMenuOpen(false);
+                      }}
+                      className={`flex h-10 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors ${
+                        active
+                          ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                          : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                      }`}
+                    >
+                      <Icon className="size-5" />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+
+            {/* Mobile Footer with User and Logout */}
+            <div className="pt-4 border-t border-sidebar-border mt-6">
+              <div className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg border border-sidebar-border/60 bg-sidebar-accent/30">
+                <div className="grid size-8 place-items-center rounded-full bg-red-500/15 border border-red-500/25 font-bold text-red-600 dark:text-red-400 text-xs shrink-0">
+                  {user?.fullName
+                    ? user.fullName
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")
+                        .slice(0, 2)
+                        .toUpperCase()
+                    : "SA"}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-semibold text-sidebar-foreground">
+                    {user?.fullName || "Super Administrator"}
+                  </p>
+                  <p className="truncate text-[10px] text-sidebar-muted">
+                    {user?.email || "superadmin@dezobuild.com"}
+                  </p>
+                </div>
                 <button
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="rounded p-1 text-sidebar-muted hover:text-sidebar-foreground"
+                  onClick={async () => {
+                    await logout();
+                    setMobileMenuOpen(false);
+                  }}
+                  title="Terminate Platform Session (Logout)"
+                  className="p-1 rounded text-sidebar-muted hover:text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
                 >
-                  <X className="size-5" />
+                  <LogOut className="size-3.5" />
                 </button>
               </div>
             </div>
-
-            <nav className="mt-6 space-y-1">
-              {OWNER_NAV_ITEMS.map((item) => {
-                const Icon = item.icon;
-                const active = activeTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      onTabChange(item.id);
-                      setMobileMenuOpen(false);
-                    }}
-                    className={`flex h-10 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors ${
-                      active
-                        ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-                        : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                    }`}
-                  >
-                    <Icon className="size-5" />
-                    <span>{item.label}</span>
-                  </button>
-                );
-              })}
-            </nav>
           </aside>
         </div>
       )}
@@ -401,8 +456,8 @@ export function OwnerShell({ activeTab, onTabChange, children }: OwnerShellProps
               </div>
               <div>
                 <h3 className="text-base font-bold text-foreground">Cross-Portal Navigation Boundary Notice</h3>
-                <p className="text-xs text-muted-foreground mt-1">
-                  You are currently authenticated as <strong className="text-primary font-semibold">SUPER_ADMIN</strong> on the Platform Owner control plane (<code className="text-foreground">owner.dezobuild.com</code>).
+                <p className="text-xs leading-relaxed text-muted-foreground mt-1">
+                  You are currently authenticated as <strong className="text-primary font-semibold">SUPER_ADMIN</strong> on the Platform Owner control plane (<code className="text-foreground font-mono text-[11px] font-semibold bg-muted px-1.5 py-0.5 rounded border border-border inline-block align-baseline mx-0.5">owner.dezobuild.com</code>).
                 </p>
               </div>
             </div>

@@ -29,6 +29,8 @@ import { formatCurrency, useMockStore, useContextualData } from "@/mock";
 import { useCurrentUser } from "@/auth";
 import { CustomerRole, hasPermission } from "@/authorization";
 
+import { downloadCsv } from "@/lib/export-utils";
+
 export const Route = createFileRoute("/reports/")({
   head: () => ({
     meta: [
@@ -98,9 +100,76 @@ function ReportsPage() {
     );
   }
 
-  const handleExport = (format: "PDF" | "XLSX") => {
-    notify(`Generating and exporting ${activeReport.name} in ${format} format…`);
+  const handleExport = (format: "PDF" | "XLSX" | "CSV") => {
+    const filename = `${activeReport.name.replace(/\s+/g, "_")}_${dateRange.replace(/\s+/g, "_")}`;
+    let headers: string[] = ["Item / Entity", "Category", "Status", "Metric 1", "Metric 2", "Metric 3"];
+    let rows: (string | number | boolean)[][] = [];
+
+    if (activeReport.category === "Progress" || activeReport.category === "Operations") {
+      headers = ["Project Code", "Project Name", "Client", "Location", "Budget (INR)", "Progress %", "Status"];
+      rows = projects.map((p) => [
+        p.code,
+        p.name,
+        p.client,
+        p.city,
+        p.budget,
+        p.progress,
+        p.status,
+      ]);
+    } else if (activeReport.category === "Materials & Stores") {
+      headers = ["Material Code", "Description", "Category", "Current Stock", "Unit", "Unit Rate (INR)", "Total Valuation"];
+      rows = materials.map((m) => [
+        m.code,
+        m.name,
+        m.category,
+        m.currentStock,
+        m.unit,
+        m.unitRate,
+        m.currentStock * m.unitRate,
+      ]);
+    } else if (activeReport.category === "Cost & Commercial" || activeReport.category === "Finance & Accounts") {
+      headers = ["Expense Number", "Project", "Category", "Vendor / Payee", "Amount (INR)", "Status", "Date"];
+      rows = expenses.map((e) => [
+        e.expenseNumber,
+        e.projectName,
+        e.category,
+        e.vendorContractor,
+        e.amount,
+        e.status,
+        e.date,
+      ]);
+    } else if (activeReport.category === "People & HR") {
+      headers = ["Contractor Gang", "Trade", "Deployment Count", "Supervisor", "Daily Rate (INR)", "Assigned Project"];
+      rows = labourContractors.map((c) => [
+        c.name,
+        c.trade,
+        c.currentDeployment,
+        c.supervisorName,
+        c.dailyWageRate,
+        c.assignedProject,
+      ]);
+    } else if (activeReport.category === "Plant & Machinery") {
+      headers = ["Asset Code", "Machinery Name", "Equipment Type", "Assigned Site", "Hour Meter", "Hourly Rate (INR)", "Status"];
+      rows = equipment.map((eq) => [
+        eq.assetCode,
+        eq.name,
+        eq.type,
+        eq.currentSite,
+        eq.currentHourMeter,
+        eq.hourlyRate,
+        eq.status,
+      ]);
+    }
+
+    if (rows.length === 0) {
+      headers = ["Report Name", "Category", "Scope", "Period", "Status"];
+      rows = [[activeReport.name, activeReport.category, activeReport.cadence, dateRange, "Active"]];
+    }
+
+    downloadCsv(filename, headers, rows);
+    notify(`Report "${activeReport.name}" exported successfully.`);
   };
+
 
   return (
     <AppShell crumb="Reports">

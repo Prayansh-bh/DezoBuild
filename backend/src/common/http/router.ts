@@ -17,10 +17,28 @@ interface RouteDefinition {
   pattern: RegExp;
   paramNames: string[];
   handler: RouteHandler;
+  specificity: number;
 }
 
 export class HttpRouter {
   private readonly routes: RouteDefinition[] = [];
+
+  private calculateSpecificity(path: string): number {
+    const segments = path.split("/").filter(Boolean);
+    let score = 0;
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i]!;
+      const posWeight = Math.pow(2, Math.max(0, 10 - i));
+      if (seg.startsWith(":")) {
+        score += 1 * posWeight;
+      } else if (seg === "*") {
+        score += 0;
+      } else {
+        score += 4 * posWeight;
+      }
+    }
+    return score;
+  }
 
   private pathToRegexp(path: string): { pattern: RegExp; paramNames: string[] } {
     const paramNames: string[] = [];
@@ -39,12 +57,14 @@ export class HttpRouter {
 
   public register(method: string, path: string, handler: RouteHandler): void {
     const { pattern, paramNames } = this.pathToRegexp(path);
+    const specificity = this.calculateSpecificity(path);
     this.routes.push({
       method: method.toUpperCase(),
       path,
       pattern,
       paramNames,
       handler,
+      specificity,
     });
   }
 
@@ -132,22 +152,27 @@ export class HttpRouter {
       const method = (req.method || "GET").toUpperCase();
 
       try {
-        // Find matching route
+        // Find matching route by evaluating specificity (highest specificity wins; FIFO on ties)
         let matchedRoute: RouteDefinition | undefined;
+        let bestSpecificity = -1;
         const params: Record<string, string> = {};
 
         for (const route of this.routes) {
           if (route.method === method) {
             const match = pathname.match(route.pattern);
             if (match) {
-              matchedRoute = route;
-              route.paramNames.forEach((name, index) => {
-                const paramVal = match[index + 1];
-                if (paramVal !== undefined) {
-                  params[name] = decodeURIComponent(paramVal);
-                }
-              });
-              break;
+              if (route.specificity > bestSpecificity) {
+                bestSpecificity = route.specificity;
+                matchedRoute = route;
+                // Reset and extract params for best matching route
+                Object.keys(params).forEach((k) => delete params[k]);
+                route.paramNames.forEach((name, index) => {
+                  const paramVal = match[index + 1];
+                  if (paramVal !== undefined) {
+                    params[name] = decodeURIComponent(paramVal);
+                  }
+                });
+              }
             }
           }
         }

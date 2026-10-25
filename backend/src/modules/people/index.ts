@@ -1,37 +1,34 @@
-export interface EmployeeDto {
-  id: string;
-  empCode: string;
-  name: string;
-  role: string;
-  department: string;
-  assignedProjectId: string;
-  assignedProjectName: string;
-  phone: string;
-  email: string;
-  joinDate: string;
-  status: "active" | "on_leave" | "transferred" | "inactive";
-  bloodGroup: string;
-  emergencyContact: string;
-}
-
-export interface AttendanceRecordDto {
-  id: string;
-  projectId: string;
-  projectName: string;
-  date: string;
-  ownStaffPresent: number;
-  contractLabourPresent: number;
-  totalPresent: number;
-  recordedBy: string;
-  shift:
-    | "General Day (08:00 - 17:00)"
-    | "Overtime / Extended (17:00 - 21:00)"
-    | "Night Shift (21:00 - 05:00)";
-  status: "submitted" | "approved" | "disputed";
-}
-
-export interface PeopleServiceContract {
-  findAllEmployees(): Promise<EmployeeDto[]>;
-  getAttendanceSummary(projectId: string, date: string): Promise<AttendanceRecordDto | null>;
-  recordAttendance(record: Omit<AttendanceRecordDto, "id">): Promise<AttendanceRecordDto>;
-}
+export * from './constants/people.constants.js';
+export * from './dto/employee.dto.js';
+export * from './dto/shift.dto.js';
+export * from './dto/attendance.dto.js';
+export * from './dto/contractor.dto.js';
+export * from './dto/muster.dto.js';
+export * from './dto/leave.dto.js';
+export * from './dto/holiday.dto.js';
+export * from './repositories/employee.repository.js';
+export * from './repositories/shift.repository.js';
+export * from './repositories/attendance.repository.js';
+export * from './repositories/regularization.repository.js';
+export * from './repositories/contractor.repository.js';
+export * from './repositories/muster.repository.js';
+export * from './repositories/leave.repository.js';
+export * from './repositories/holiday.repository.js';
+export * from './repositories/people-audit.repository.js';
+export * from './services/employee.service.js';
+export * from './services/shift.service.js';
+export * from './services/attendance.service.js';
+export * from './services/regularization.service.js';
+export * from './services/contractor.service.js';
+export * from './services/muster.service.js';
+export * from './services/leave.service.js';
+export * from './services/holiday.service.js';
+export * from './controllers/employees.controller.js';
+export * from './controllers/shifts.controller.js';
+export * from './controllers/attendance.controller.js';
+export * from './controllers/regularizations.controller.js';
+export * from './controllers/contractors.controller.js';
+export * from './controllers/musters.controller.js';
+export * from './controllers/leaves.controller.js';
+export * from './controllers/holidays.controller.js';
+export * from './people.routes.js';

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -7,7 +8,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { DocumentItem } from "@/mock/types";
-import { Download, FileText, Tag, User } from "lucide-react";
+import { Download, FileText, Loader2, Tag, User } from "lucide-react";
+import { downloadCsv } from "@/lib/export-utils";
 
 export function DocumentViewerDialog({
   document,
@@ -18,7 +20,50 @@ export function DocumentViewerDialog({
   isOpen: boolean;
   onClose: () => void;
 }) {
+  const [isDownloading, setIsDownloading] = useState(false);
   if (!document) return null;
+
+  const handleDownload = () => {
+    setIsDownloading(true);
+    try {
+      const headers = [
+        "Document ID",
+        "Document Name",
+        "Project Name",
+        "Category",
+        "Type",
+        "Revision",
+        "Format",
+        "File Size",
+        "Uploaded By",
+        "Updated Date",
+        "Tags",
+      ];
+      const rows = [
+        [
+          document.id,
+          document.name,
+          document.projectName,
+          document.category,
+          document.type,
+          document.version,
+          document.fileExtension,
+          document.size,
+          document.uploadedBy,
+          document.updatedDate,
+          document.tags.join("; "),
+        ],
+      ];
+      const baseName = document.name.replace(/\.[^/.]+$/, "");
+      downloadCsv(`Document_${baseName}_Metadata`, headers, rows);
+      setTimeout(() => {
+        setIsDownloading(false);
+        onClose();
+      }, 400);
+    } catch (err) {
+      setIsDownloading(false);
+    }
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -47,13 +92,16 @@ export function DocumentViewerDialog({
             </p>
             <Button
               size="sm"
-              className="mt-4 gap-2"
-              onClick={() => {
-                alert(`Downloaded ${document.name}`);
-                onClose();
-              }}
+              className="mt-4 gap-2 cursor-pointer"
+              disabled={isDownloading}
+              onClick={handleDownload}
             >
-              <Download className="size-4" /> Download Document
+              {isDownloading ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Download className="size-4" />
+              )}
+              {isDownloading ? "Downloading…" : "Download Document"}
             </Button>
           </div>
 

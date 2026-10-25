@@ -200,7 +200,7 @@ export function CommandSearchDialog({ isOpen, onClose }: { isOpen: boolean; onCl
               {[
                 { label: "Finance & Expenses", to: "/finance", icon: WalletCards },
                 { label: "People & Attendance", to: "/people", icon: Users },
-                { label: "Plant & Equipment", to: "/equipment", icon: Truck },
+                { label: "Machinery & Equipment", to: "/equipment", icon: Truck },
                 { label: "Reports & Analytics", to: "/reports", icon: FileText },
               ].map((ws) => (
                 <button

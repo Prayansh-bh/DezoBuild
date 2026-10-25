@@ -4,14 +4,17 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
+  useNavigate,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
+import { LoaderCircle } from "lucide-react";
 
 import appCss from "../styles.css?url";
 import { reportRuntimeError } from "../lib/error-reporting";
-import { MockAuthProvider } from "../auth";
+import { AuthProvider, useAuth } from "../auth";
 
 function NotFoundComponent() {
   return (
@@ -132,15 +135,79 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+function AuthBoundary({ children }: { children: ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const navigate = useNavigate();
+
+  const isPublicRoute = pathname === "/login" || pathname.startsWith("/invite");
+
+  useEffect(() => {
+    if (!isLoading) {
+      if (!isAuthenticated && !isPublicRoute) {
+        navigate({
+          to: "/login",
+          search: pathname !== "/" ? { redirect: pathname } : {},
+          replace: true,
+        });
+      }
+    }
+  }, [isAuthenticated, isLoading, isPublicRoute, pathname, navigate]);
+
+  if (isPublicRoute) {
+    return <>{children}</>;
+  }
+
+  if (isLoading) {
+    return (
+      <>
+        <div className="fixed inset-0 z-50 flex min-h-screen items-center justify-center bg-background">
+          <div className="flex flex-col items-center gap-3">
+            <div className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary">
+              <LoaderCircle className="size-6 animate-spin text-primary" />
+            </div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+              Resolving DEZOBUILD Session...
+            </p>
+          </div>
+        </div>
+        <div className="hidden" aria-hidden="true">
+          {children}
+        </div>
+      </>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <>
+        <div className="fixed inset-0 z-50 flex min-h-screen items-center justify-center bg-background">
+          <div className="flex flex-col items-center gap-3">
+            <LoaderCircle className="size-6 animate-spin text-primary" />
+            <p className="text-xs font-semibold text-muted-foreground">Redirecting to login...</p>
+          </div>
+        </div>
+        <div className="hidden" aria-hidden="true">
+          {children}
+        </div>
+      </>
+    );
+  }
+
+  return <>{children}</>;
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
     <QueryClientProvider client={queryClient}>
-      <MockAuthProvider>
-        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-        <Outlet />
-      </MockAuthProvider>
+      <AuthProvider>
+        <AuthBoundary>
+          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+          <Outlet />
+        </AuthBoundary>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

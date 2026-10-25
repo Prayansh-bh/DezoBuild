@@ -4,7 +4,6 @@
     "frontend/src/**/*.tsx",
     "owner/src/**/*.ts",
     "owner/src/**/*.tsx",
-    "backend/src/**/*.ts",
     "eslint.config.js"
   ],
   "compilerOptions": {

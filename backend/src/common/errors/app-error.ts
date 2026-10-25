@@ -32,8 +32,29 @@ export class UnauthorizedError extends AppError {
 
 export class ForbiddenError extends AppError {
   public readonly statusCode = 403;
-  public readonly errorCode = "FORBIDDEN";
-  public readonly title = "Forbidden";
+  public readonly errorCode: string;
+  public readonly title: string;
+
+  constructor(message = "Forbidden", errorCode = "FORBIDDEN", title = "Forbidden") {
+    super(message);
+    this.name = "ForbiddenError";
+    this.errorCode = errorCode;
+    this.title = title;
+  }
+}
+
+export class FeatureNotEntitledError extends ForbiddenError {
+  constructor(message = "This feature is not entitled under the current subscription plan.") {
+    super(message, "FEATURE_NOT_ENTITLED", "Feature Not Entitled");
+    this.name = "ForbiddenError";
+  }
+}
+
+export class FeatureDisabledError extends ForbiddenError {
+  constructor(message = "This feature is currently disabled in your tenant workspace settings.") {
+    super(message, "FEATURE_DISABLED", "Feature Disabled in Workspace");
+    this.name = "ForbiddenError";
+  }
 }
 
 export class NotFoundError extends AppError {
